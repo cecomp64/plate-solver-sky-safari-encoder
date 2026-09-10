@@ -80,12 +80,16 @@ camera:
   height: 1944
 
 solver:
-  # null = use cedar-solve's bundled default_database (fine for bring-up).
-  # Once you've measured your camera+lens's real field of view, build a
-  # matched database with scripts/build_database.py and point this at it -
-  # it solves noticeably faster and more reliably than the default.
+  # IMPORTANT: cedar-solve's bundled default_database only covers 10-30deg
+  # FOV. This camera's stock lens (OV5647, 3.6mm M12) is ~53.5deg
+  # horizontal - well outside that range, so leaving this null will fail
+  # to solve real images, not just solve them slower. Build a database
+  # matched to this camera with `scripts/build_database.py --max-fov 55`
+  # (see SETUP.md) and point this at it before expecting real solves to
+  # work. See scripts/generate_test_image.py + scripts/solve_image.py for
+  # a way to verify this without a real capture.
   database_path: null
-  fov_estimate_deg: 60.0
+  fov_estimate_deg: 53.5
   sigma: 8.0
   solve_timeout_ms: 3000
 

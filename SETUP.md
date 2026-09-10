@@ -173,10 +173,71 @@ Edit `config/config.yaml`:
   thing GPS would normally give you automatically; for v1 you set each
   site once here, then use the button in the field to switch between
   them** - see "Location button + LED" below.
-- Leave `solver.database_path: null` for now (uses cedar-solve's bundled
-  database) - see step 13 for building a faster, camera-matched one later.
+- Leave `solver.database_path: null` for step 10 below (uses cedar-solve's
+  bundled `default_database` until you build a real one).
 
-## 10. Sanity-check the pipeline (before touching SkySafari)
+## 10. Build a camera-matched database (required, not optional)
+
+This camera's stock lens gives a horizontal FOV of ~53.5deg (see
+README.md's "Camera field of view" for the math) - well outside the
+10-30deg range cedar-solve's bundled `default_database` was built for.
+Leaving `solver.database_path: null` will fail to solve real images from
+this camera, not just solve them slower, so do this before step 11:
+
+```
+cd ~/plate-solver-sky-safari-encoder
+source .venv/bin/activate
+python scripts/build_database.py --max-fov 55 --save-as data/ov5647_stock_lens
+```
+
+Takes a few minutes. Then in `config.yaml`, set
+`solver.database_path: data/ov5647_stock_lens`.
+
+**This one database covers the whole sky, both hemispheres, with no
+extra steps** - `generate_database()` always builds from the full star
+catalog (RA 0-360, Dec -90 to +90); cedar-solve has no per-hemisphere or
+per-region option to configure. You don't need to think about this again
+even if you take the binoculars somewhere south of the equator - it's
+step 11 below that actually proves it, rather than just taking that on
+faith.
+
+(If you later swap in a different lens, rebuild with `--max-fov` set to
+that lens's actual FOV and repeat step 11 below - a database built for
+one FOV won't solve images at a substantially different one.)
+
+## 11. Verify the solver on synthetic test images (both hemispheres)
+
+Before ever pointing the camera at real sky, confirm cedar-detect and
+cedar-solve are wired up correctly and the database from step 10
+actually solves at this camera's geometry - using rendered images with a
+known correct answer, so there's no ambiguity about whether a bad result
+means "solver problem" or "bad photo". Three named test fields are
+built in, spanning both hemispheres (see `FIELD_PRESETS` in
+`synthetic_sky.py`):
+
+```
+python scripts/generate_test_image.py --field orion        # celestial equator
+python scripts/generate_test_image.py --field ursa-major    # northern (the Big Dipper)
+python scripts/generate_test_image.py --field crux          # southern (the Southern Cross)
+
+python scripts/solve_image.py test_images/synthetic_orion.png
+python scripts/solve_image.py test_images/synthetic_ursa-major.png
+python scripts/solve_image.py test_images/synthetic_crux.png
+```
+
+Each `generate_test_image.py` run prints its ground-truth `RA=... Dec=...
+FOV=53.5`; each `solve_image.py` run's `SOLVED: RA=... Dec=...` should
+land within a fraction of a degree of the corresponding one. All three
+solving correctly is what actually demonstrates the database from step
+10 works regardless of which hemisphere you're observing from - not just
+the equator-straddling default field.
+
+If any say "No solve", double check `solver.database_path` in
+`config.yaml` actually points at step 10's database (not still `null`),
+and that `cedar-detect-server` is running (see step 12 below for
+starting it manually).
+
+## 12. Sanity-check the pipeline with a real capture (before touching SkySafari)
 
 In one terminal:
 ```
@@ -192,10 +253,12 @@ python scripts/solve_once.py
 
 You want to see `SOLVED: RA=... Dec=... ...`. If it says "No stars
 detected", adjust `camera.exposure_ms`/`camera.gain` in `config.yaml` and
-check focus/lens cap. If stars are detected but it doesn't solve, try a
-longer `solver.solve_timeout_ms` or a wider `solver.fov_estimate_deg`.
+check focus/lens cap. If stars are detected but it doesn't solve and step
+11's synthetic image did solve, the issue is specific to the real
+capture (focus, exposure, or a genuinely cloudy/obstructed view) rather
+than the solver setup itself.
 
-## 11. Run as services
+## 13. Run as services
 
 ```
 mkdir -p ~/.config/systemd/user/
@@ -220,21 +283,7 @@ forgotten press can't silently leave the field session on canned
 positions after a power cycle. While simulating, solved-fix log lines
 are tagged `[SIMULATED]`.
 
-## 12. (Later) Build a camera-matched database
-
-The bundled `default_database` covers a wide FOV range generically and
-solves slower than a database built for your camera's actual field of
-view. Once you know your real horizontal FOV (from the lens focal length
-and sensor width, or by checking `solve_once.py`'s reported `FOV=` value
-against the default database):
-
-```
-python scripts/build_database.py --max-fov <your_fov_deg> --save-as data/my_camera
-```
-
-Then in `config.yaml`, set `solver.database_path: data/my_camera`.
-
-## 13. Wi-Fi access point (field use, no router needed)
+## 14. Wi-Fi access point (field use, no router needed)
 
 Mirrors `esp32_push_to`'s standalone AP so an existing SkySafari scope
 profile keeps its IP/port unchanged - just swap which device you connect
@@ -256,7 +305,7 @@ server, so whatever time it has when you leave is what it solves with
 for the rest of the session (a few seconds of drift over one night is
 fine; get it right before you leave, not after).
 
-## 14. Configure SkySafari
+## 15. Configure SkySafari
 
 | Setting | Value |
 | :-- | :-- |
@@ -305,9 +354,10 @@ on a normal DSC.
   binoc-solve -f` for whether solves are succeeding at all - a device
   with no fix yet still answers `Q` (with a placeholder), so a truly
   unresponsive connection points at the network/service, not the solver.
-- **Solves are rare/slow**: build a camera-matched database (step 12);
-  also check `scripts/solve_once.py`'s star count - too few stars usually
-  means exposure/focus, not solver tuning.
+- **Solves are rare/slow**: confirm `solver.database_path` isn't still
+  `null` (step 10 - required at this camera's ~53.5deg FOV, not just an
+  optimization); also check `scripts/solve_once.py`'s star count - too
+  few stars usually means exposure/focus, not solver tuning.
 - **Positions are off by a consistent amount at a given site**: check
   that the active location's LED blink count actually matches the site
   you're at (easy to forget a press after moving locations), and that
