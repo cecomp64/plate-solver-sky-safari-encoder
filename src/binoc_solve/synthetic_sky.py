@@ -95,8 +95,17 @@ def radec_to_pixel(
     xi = (math.cos(dec) * math.sin(d_ra)) / cos_c
     eta = (math.cos(dec0) * math.sin(dec) - math.sin(dec0) * math.cos(dec) * math.cos(d_ra)) / cos_c
 
-    # +RA increases to the right, +Dec increases upward (smaller row index).
-    x = width_px / 2.0 + xi * focal_length_px
+    # +RA increases to the LEFT, +Dec increases upward (smaller row index).
+    # This is the standard "looking out at the sky from inside the
+    # celestial sphere" convention real cameras and WCS/FITS images use -
+    # the opposite handedness from a star *chart* (drawn looking at the
+    # sphere from outside). Distance-only checks (e.g. against astropy's
+    # angular separation) can't catch a handedness/mirror error since
+    # mirroring preserves all pairwise distances; this was only caught by
+    # an actual tetra3 solve failing on every field until this sign was
+    # flipped - see git history for the isolating tests if this
+    # regresses.
+    x = width_px / 2.0 - xi * focal_length_px
     y = height_px / 2.0 - eta * focal_length_px
     return x, y
 
@@ -116,7 +125,8 @@ def pixel_to_radec(
     solving radec_to_pixel's own equations, so round-tripping through
     both is a genuine self-consistency check - see
     tests/test_synthetic_sky.py."""
-    xi = (x_px - width_px / 2.0) / focal_length_px
+    # Matches radec_to_pixel's East-is-left sign convention (see there).
+    xi = (width_px / 2.0 - x_px) / focal_length_px
     eta = (height_px / 2.0 - y_px) / focal_length_px
 
     dec0 = math.radians(dec0_deg)

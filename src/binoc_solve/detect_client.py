@@ -7,14 +7,14 @@ cedar-detect-server is a local systemd service).
 from __future__ import annotations
 
 import logging
+import os
+import uuid
 from multiprocessing import shared_memory
 
 import grpc
 import numpy as np
 
 logger = logging.getLogger(__name__)
-
-_SHMEM_NAME = "/binoc_solve_image"
 
 
 class DetectClient:
@@ -44,14 +44,35 @@ class DetectClient:
         """Returns (y, x) centroids, brightest first - the order and shape
         Tetra3.solve_from_centroids() expects."""
         height, width = image.shape[:2]
-        shmem = shared_memory.SharedMemory(_SHMEM_NAME, create=True, size=height * width)
+        # Unique per call, not a fixed name: cedar-detect-server may field
+        # requests from more than one process at once (e.g. the live
+        # service plus a one-off script like solve_image.py, or two
+        # DetectClient instances in the same process as SYNTHETIC mode
+        # adds) - a shared fixed name let one caller's create/unlink race
+        # another's, corrupting whichever request lost the race with a
+        # torn or already-freed buffer. Confirmed by hand: centroids
+        # against test_images/synthetic_orion.png were wrong/near-zero
+        # while the live service was concurrently polling the real
+        # camera through the same fixed name; a fresh, uncontended name
+        # fixed it immediately.
+        shmem_name = f"/binoc_solve_image_{os.getpid()}_{uuid.uuid4().hex}"
+        shmem = shared_memory.SharedMemory(shmem_name, create=True, size=height * width)
         try:
             shared_image = np.ndarray(image.shape, dtype=image.dtype, buffer=shmem.buf)
             shared_image[:] = image[:]
 
             request = self._cedar_detect_pb2.CentroidsRequest(
                 input_image=self._cedar_detect_pb2.Image(
-                    width=width, height=height, shmem_name=shmem.name
+                    width=width, height=height, shmem_name=shmem.name,
+                    # Without this, cedar-detect-server caches the fd from
+                    # its *first-ever* request and keeps mmap'ing that same
+                    # stale shared-memory object forever, silently ignoring
+                    # every later shmem_name - confirmed by hand: a
+                    # long-running server kept re-analyzing its first
+                    # captured frame no matter what image was actually
+                    # sent afterward, while a freshly restarted server
+                    # (or one told to reopen) read the real, current image.
+                    reopen_shmem=True,
                 ),
                 sigma=self._sigma,
                 use_binned_for_star_candidates=True,

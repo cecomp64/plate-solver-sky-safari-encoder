@@ -41,6 +41,12 @@ class CameraConfig:
 
 
 @dataclass(frozen=True)
+class SyntheticCameraConfig:
+    image_dir: str
+    interval_s: float
+
+
+@dataclass(frozen=True)
 class SolverConfig:
     database_path: str | None
     fov_estimate_deg: float
@@ -75,6 +81,7 @@ class Config:
     location_selector: LocationSelectorConfig
     simulator_selector: SimulatorSelectorConfig
     camera: CameraConfig
+    synthetic_camera: SyntheticCameraConfig
     solver: SolverConfig
     cedar_detect: CedarDetectConfig
     encoder: EncoderConfig
@@ -90,6 +97,7 @@ class Config:
             location_selector=LocationSelectorConfig(**raw["location_selector"]),
             simulator_selector=SimulatorSelectorConfig(**raw["simulator_selector"]),
             camera=CameraConfig(**raw["camera"]),
+            synthetic_camera=SyntheticCameraConfig(**raw["synthetic_camera"]),
             solver=SolverConfig(**raw["solver"]),
             cedar_detect=CedarDetectConfig(**raw["cedar_detect"]),
             encoder=EncoderConfig(**raw["encoder"]),

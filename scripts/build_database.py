@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from pathlib import Path
 
 
 def main() -> None:
@@ -36,14 +37,21 @@ def main() -> None:
 
     from tetra3 import Tetra3  # noqa: PLC0415 - only needed once cedar-solve is installed
 
+    # Tetra3.save_database() resolves a bare str relative to *its own*
+    # tetra3/data directory, not this project's - a Path is used as-is
+    # (relative to the cwd this script is run from), which is what
+    # solver.py's Config.solver.database_path expects when it loads this
+    # same path back later. Without this, --save-as data/foo tries to
+    # write inside tetra3/data/data/ instead of this project's data/.
+    save_path = Path(args.save_as)
     t3 = Tetra3(load_database=None)
     t3.generate_database(
         max_fov=args.max_fov,
         min_fov=args.min_fov,
         star_catalog=args.star_catalog,
-        save_as=args.save_as,
+        save_as=save_path,
     )
-    print(f"Database written to {args.save_as}.npz")
+    print(f"Database written to {save_path}.npz")
 
 
 if __name__ == "__main__":

@@ -9,9 +9,13 @@ from binoc_solve.config import SolverConfig
 
 logger = logging.getLogger(__name__)
 
-# Mirrors the status constants tetra3.solve_from_centroids() returns in
-# its 'status' field.
-_MATCH_FOUND = "MATCH_FOUND"
+# Mirrors tetra3.tetra3.MATCH_FOUND (not re-exported from the tetra3
+# package's top-level __init__.py, so duplicated here rather than
+# reaching into the private submodule). solve_from_centroids() returns
+# this as an int (1), not the string "MATCH_FOUND" - comparing against
+# the string here previously meant every solve, matched or not, was
+# silently treated as a failure.
+_MATCH_FOUND = 1
 
 
 @dataclass(frozen=True)

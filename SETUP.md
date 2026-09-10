@@ -53,10 +53,15 @@ Two buttons need wiring - their indicators reuse the Pi's built-in power
   both if you use a different pin), the other leg to any GND pin.
 - **Simulator button**: one leg to GPIO27 (matching
   `simulator_selector.button_gpio: 27`), the other leg to any GND pin.
-  Toggles the solve loop between the real camera/cedar-detect/cedar-solve
-  pipeline and a canned solver (`binoc_solve/fakes.py`), so you can
-  demo/test the SkySafari integration without pointing at open sky - see
-  `scripts/simulate_skysafari.py`'s docstring for the same idea run
+  Cycles the solve loop through three data sources
+  (`binoc_solve/pipeline_mode.py`): the real camera/cedar-detect/cedar-
+  solve pipeline; a smoothly slewing canned position
+  (`binoc_solve/fakes.py`); and the real cedar-detect/cedar-solve
+  pipeline fed pre-rendered test images from `test_images/` instead of a
+  live capture, walking to the next one every couple of seconds
+  (`binoc_solve/synthetic_camera.py`). All three let you demo/test the
+  SkySafari integration without pointing at open sky - see
+  `scripts/simulate_skysafari.py`'s docstring for a similar idea run
   standalone off-Pi.
 
 `gpiozero`'s `Button` uses an internal pull-up by default, so no external
@@ -237,6 +242,35 @@ If any say "No solve", double check `solver.database_path` in
 and that `cedar-detect-server` is running (see step 12 below for
 starting it manually).
 
+All six built-in fields now solve correctly (verified RA/Dec matches
+each field's printed ground truth to a fraction of a degree). Getting
+here took finding two unrelated bugs, both now fixed - worth knowing
+about since they'd otherwise have silently broken *real* solves too,
+not just these synthetic ones:
+
+- `synthetic_sky.py`'s `radec_to_pixel()` had RA increasing rightward
+  in the rendered image instead of leftward (the correct convention
+  for a camera looking *out* at the sky, as opposed to a star chart
+  drawn looking *at* the celestial sphere from outside). Every
+  geometry/round-trip test here passed anyway, because mirroring
+  preserves all pairwise distances - the kind of check those tests
+  do - so this was only caught by a real `solve_from_centroids()` call
+  failing on every field, at every tolerance, against both the bundled
+  and a custom database, before being isolated to this one sign.
+- `solver.py` compared cedar-solve's returned `status` (an int) against
+  the string `"MATCH_FOUND"`, which is never equal to anything cedar-
+  solve actually returns - so a real successful solve was
+  indistinguishable from a failed one. This one's the more serious
+  bug: it would have affected genuine night-sky solves too, not just
+  this synthetic-image check.
+
+`smc` and `magellanic-clouds` need `solver.sigma` lowered to 6 or below
+to solve (their whole premise is being deliberately star-sparse - see
+`FIELD_PRESETS` in `synthetic_sky.py` - so `sigma: 8.0`'s default
+finds too few of their fainter stars). This isn't a bug; it's the same
+"too few stars -> lower sigma/raise exposure" tradeoff step 10's link
+to `scripts/solve_once.py` already describes for a real capture.
+
 ## 12. Sanity-check the pipeline with a real capture (before touching SkySafari)
 
 In one terminal:
@@ -277,11 +311,12 @@ twice, pausing between repeats). The selection is saved to
 changes when you press the button.
 
 On startup, and after every simulator-button press, the activity LED
-blinks 1 (real pipeline) or 2 (simulator) to confirm the new state.
-Unlike the location selection, this always starts real on boot - a
-forgotten press can't silently leave the field session on canned
-positions after a power cycle. While simulating, solved-fix log lines
-are tagged `[SIMULATED]`.
+blinks 1 (real pipeline), 2 (simulator), or 3 (synthetic - walking
+`test_images/`) to confirm the new state. Unlike the location
+selection, this always starts real on boot - a forgotten press can't
+silently leave the field session on fake/synthetic positions after a
+power cycle. While not on the real pipeline, solved-fix log lines are
+tagged `[SIMULATED]` or `[SYNTHETIC]`.
 
 ## 14. Wi-Fi access point (field use, no router needed)
 
@@ -377,6 +412,15 @@ on a normal DSC.
   `simulator_selector.led_name` in `config.yaml` to whatever's actually
   there (the startup error also lists the available names).
 - **Positions look plausible but suspiciously fixed to a handful of
-  bright stars**: the simulator button was likely pressed by accident -
-  check for `[SIMULATED]` in `journalctl --user -u binoc-solve -f` and
-  press it again to go back to the real pipeline.
+  bright stars, or the field never seems to change**: the simulator
+  button was likely pressed by accident, landing on simulator or
+  synthetic mode - check for `[SIMULATED]`/`[SYNTHETIC]` in `journalctl
+  --user -u binoc-solve -f` and press the button (1-3 times) to cycle
+  back to the real pipeline.
+- **Synthetic mode logs "No solve this cycle" for every image in
+  `test_images/`**: expected for `synthetic_smc.png`/
+  `synthetic_magellanic-clouds.png` at the default `sigma: 8.0` - see
+  step 11, lower it to 6 or below. For any other field, confirm with
+  `scripts/solve_image.py test_images/synthetic_orion.png` directly
+  (bypassing the button/service) before assuming something else is
+  wrong.

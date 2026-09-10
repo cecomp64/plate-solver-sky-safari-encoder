@@ -46,15 +46,19 @@ location_selector:
   blink_repeats: 2
 
 simulator_selector:
-  # A second button that flips the solve loop between the real camera/
-  # cedar-detect/cedar-solve pipeline and a set of canned RA/Dec
-  # solutions (binoc_solve/fakes.py) - lets you demo/test the SkySafari
-  # integration (crosshair placement, encoder protocol) without pointing
-  # at open sky. Wired the same way as location_selector's button (one
-  # leg to this pin, other leg to GND), but to a different pin. Always
-  # starts on the real pipeline at boot - unlike the location selection,
-  # this is not persisted, so a forgotten press can't silently serve
-  # fake positions after a power cycle in the field.
+  # A second button that cycles the solve loop through three data
+  # sources (binoc_solve/pipeline_mode.py): the real camera/cedar-detect/
+  # cedar-solve pipeline, a smoothly slewing canned position
+  # (binoc_solve/fakes.py - no pointing at open sky needed), and the
+  # real cedar-detect/cedar-solve pipeline fed pre-rendered test images
+  # from synthetic_camera.image_dir below instead of a live capture
+  # (binoc_solve/synthetic_camera.py - a genuine solve against known
+  # ground truth, still no open sky needed). Wired the same way as
+  # location_selector's button (one leg to this pin, other leg to GND),
+  # but to a different pin. Always starts on the real pipeline at boot -
+  # unlike the location selection, this is not persisted, so a forgotten
+  # press can't silently serve fake/synthetic positions after a power
+  # cycle in the field.
   button_gpio: 27
   # The Pi's ACT (activity) LED, distinct from location_selector's PWR
   # LED so both indicators are visible at once. Same case-insensitive
@@ -62,8 +66,8 @@ simulator_selector:
   # to see what's on your board if "ACT" doesn't match.
   led_name: "ACT"
   bounce_time_s: 0.05
-  # Blink timing: 1 blink = real pipeline, 2 blinks = simulator, each
-  # blink_repeats times over.
+  # Blink timing: 1 blink = real pipeline, 2 blinks = simulator, 3
+  # blinks = synthetic, each blink_repeats times over.
   blink_on_s: 0.15
   blink_off_s: 0.15
   blink_repeat_pause_s: 0.8
@@ -78,6 +82,17 @@ camera:
   gain: 8.0
   width: 2592
   height: 1944
+
+synthetic_camera:
+  # Pre-rendered test images (scripts/generate_test_image.py) that the
+  # simulator_selector button's SYNTHETIC mode walks through, one every
+  # interval_s, feeding each through the *real* cedar-detect/cedar-solve
+  # pipeline - unlike the SIMULATOR mode above, this exercises genuine
+  # star detection/solving against known ground truth, without a live
+  # camera capture. Relative paths resolve from the working directory
+  # binoc-solve.service runs from (see systemd/binoc-solve.service).
+  image_dir: "test_images"
+  interval_s: 1.5
 
 solver:
   # IMPORTANT: cedar-solve's bundled default_database only covers 10-30deg

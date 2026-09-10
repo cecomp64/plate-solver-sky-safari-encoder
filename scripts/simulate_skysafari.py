@@ -27,7 +27,7 @@ from binoc_solve.encoder_server import EncoderTCPServer
 from binoc_solve.fakes import FakeCamera, FakeDetectClient, FakeSolver
 from binoc_solve.locations import LocationStore
 from binoc_solve.main import _solve_loop
-from binoc_solve.simulator_toggle import SimulatorToggle
+from binoc_solve.pipeline_mode import Mode, ModeStore
 from binoc_solve.state import LatestFix
 
 
@@ -52,19 +52,13 @@ def main() -> None:
     print(f"Using location: {location_store.current().name}")
 
     stop_event = threading.Event()
-    # This script has no real hardware to fall back to, so the same fake
-    # objects are passed for both the "real" and "fake" pipeline slots -
-    # the never-toggled SimulatorToggle just makes _solve_loop's dispatch
-    # a no-op here.
+    # A fresh ModeStore always starts at Mode.REAL and nothing here ever
+    # advances it (no button), so only that one entry is needed - the
+    # fakes just stand in for what would otherwise be the real pipeline.
+    pipelines = {Mode.REAL: (camera, detect, solver)}
     threading.Thread(
         target=_solve_loop,
-        args=(
-            config,
-            camera, detect, solver,
-            camera, detect, solver,
-            location_store, SimulatorToggle(),
-            latest_fix, stop_event,
-        ),
+        args=(config, pipelines, location_store, ModeStore(), latest_fix, stop_event),
         daemon=True,
     ).start()
 

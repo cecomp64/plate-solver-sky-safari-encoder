@@ -18,24 +18,26 @@ from binoc_solve.encoder_server import EncoderTCPServer
 from binoc_solve.fakes import FakeCamera, FakeDetectClient, SlewingFakeSolver
 from binoc_solve.location_selector import LocationSelector
 from binoc_solve.locations import LocationStore
+from binoc_solve.pipeline_mode import Mode, ModeStore
 from binoc_solve.simulator_selector import SimulatorSelector
-from binoc_solve.simulator_toggle import SimulatorToggle
 from binoc_solve.solver import Solver
 from binoc_solve.state import LatestFix
+from binoc_solve.synthetic_camera import SyntheticImageCamera
 
 logger = logging.getLogger(__name__)
+
+# camera, detect, solver - duck-typed the same way across the real
+# pipeline and both fakes, so any (Camera|FakeCamera|SyntheticImageCamera,
+# DetectClient|FakeDetectClient, Solver|FakeSolver|SlewingFakeSolver)
+# triple works here.
+Pipeline = tuple[object, object, object]
 
 
 def _solve_loop(
     config: Config,
-    real_camera: Camera,
-    real_detect: DetectClient,
-    real_solver: Solver,
-    fake_camera: FakeCamera,
-    fake_detect: FakeDetectClient,
-    fake_solver: SlewingFakeSolver,
+    pipelines: dict[Mode, Pipeline],
     location_store: LocationStore,
-    simulator_toggle: SimulatorToggle,
+    mode_store: ModeStore,
     latest_fix: LatestFix,
     stop_event: threading.Event,
 ) -> None:
@@ -47,10 +49,8 @@ def _solve_loop(
         # Re-read every cycle, same reasoning as location_store.current()
         # below: a button press mid-session should take effect on the
         # very next cycle, not just at startup.
-        simulating = simulator_toggle.enabled
-        camera = fake_camera if simulating else real_camera
-        detect = fake_detect if simulating else real_detect
-        solver = fake_solver if simulating else real_solver
+        mode = mode_store.current()
+        camera, detect, solver = pipelines[mode]
 
         image = camera.capture_gray()
         centroids = detect.extract_centroids(image)
@@ -71,10 +71,10 @@ def _solve_loop(
                 when_utc,
             )
             latest_fix.update(alt_deg=alt_deg, az_deg=az_deg)
+            tag = f" [{mode.value.upper()}]" if mode != Mode.REAL else ""
             logger.info(
                 "Solved%s (%s): RA=%.3f Dec=%.3f (%d matches) -> Alt=%.2f Az=%.2f",
-                " [SIMULATED]" if simulating else "",
-                location.name, result.ra_deg, result.dec_deg, result.num_matches, alt_deg, az_deg,
+                tag, location.name, result.ra_deg, result.dec_deg, result.num_matches, alt_deg, az_deg,
             )
 
         elapsed = time.monotonic() - cycle_start
@@ -99,8 +99,8 @@ def main() -> None:
     location_store = LocationStore(config.locations, config.location_selector.state_file)
     location_selector = LocationSelector(config.location_selector, location_store)
 
-    simulator_toggle = SimulatorToggle()
-    simulator_selector = SimulatorSelector(config.simulator_selector, simulator_toggle)
+    mode_store = ModeStore()
+    simulator_selector = SimulatorSelector(config.simulator_selector, mode_store)
 
     real_camera = Camera(config.camera)
     real_detect = DetectClient(config.cedar_detect.address, config.solver.sigma)
@@ -108,7 +108,20 @@ def main() -> None:
     fake_camera = FakeCamera()
     fake_detect = FakeDetectClient()
     fake_solver = SlewingFakeSolver()
+    synthetic_camera = SyntheticImageCamera(
+        config.synthetic_camera.image_dir, config.synthetic_camera.interval_s
+    )
     latest_fix = LatestFix()
+
+    pipelines: dict[Mode, Pipeline] = {
+        Mode.REAL: (real_camera, real_detect, real_solver),
+        Mode.SIMULATOR: (fake_camera, fake_detect, fake_solver),
+        # Reuses the real detect/solver (not fakes) - the point of this
+        # mode is a genuine solve, just against a pre-rendered image
+        # instead of a live capture. Also avoids loading a second copy of
+        # the Tetra3 star database.
+        Mode.SYNTHETIC: (synthetic_camera, real_detect, real_solver),
+    }
 
     encoder_server = EncoderTCPServer(config.encoder, latest_fix, config.loop.stale_fix_warn_s)
     server_thread = threading.Thread(target=encoder_server.serve_forever, daemon=True)
@@ -128,13 +141,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
 
     try:
-        _solve_loop(
-            config,
-            real_camera, real_detect, real_solver,
-            fake_camera, fake_detect, fake_solver,
-            location_store, simulator_toggle,
-            latest_fix, stop_event,
-        )
+        _solve_loop(config, pipelines, location_store, mode_store, latest_fix, stop_event)
     finally:
         encoder_server.shutdown()
         encoder_server.server_close()

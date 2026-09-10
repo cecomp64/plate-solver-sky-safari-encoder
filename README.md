@@ -124,6 +124,12 @@ services, Wi-Fi AP, SkySafari configuration).
     synthetic test image generator.
   - `fakes.py` - drop-in fake camera/detect/solver for testing the
     SkySafari link without hardware (see `scripts/simulate_skysafari.py`).
+  - `synthetic_camera.py` - a camera stand-in that walks `test_images/`
+    on a timer, feeding the *real* cedar-detect/cedar-solve pipeline
+    instead of a live capture.
+  - `pipeline_mode.py`, `simulator_selector.py` - the second button/LED
+    (activity LED as the indicator) that cycles the solve loop through
+    real / simulator (`fakes.py`) / synthetic (`synthetic_camera.py`).
   - `main.py` - wires it all together; the solve loop + entrypoint.
 - `scripts/`:
   - `solve_once.py` - single-shot capture+solve+print from the real

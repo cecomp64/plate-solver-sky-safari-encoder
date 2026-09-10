@@ -19,7 +19,7 @@ import warnings
 from astropy import units as u
 from astropy.coordinates import AltAz, EarthLocation, SkyCoord
 from astropy.time import Time
-from astropy.utils.iers import IERSStaleWarning
+from astropy.utils.iers import IERSWarning
 
 
 def radec_to_altaz(
@@ -52,8 +52,14 @@ def radec_to_altaz(
     coord = SkyCoord(ra=ra_deg * u.deg, dec=dec_deg * u.deg, frame="icrs")
 
     with warnings.catch_warnings():
-        # Expected/harmless when the Pi has no internet (see module docstring).
-        warnings.simplefilter("ignore", IERSStaleWarning)
+        # Expected/harmless when the Pi has no internet (see module
+        # docstring) - IERSWarning (the base class) is what's actually
+        # raised for a failed download attempt; its IERSStaleWarning
+        # subclass only covers the separate case of proceeding with
+        # data that's already on disk but out of date. Filtering only
+        # the subclass let the download-failure warning leak through
+        # on every single solve cycle once the Pi has no network.
+        warnings.simplefilter("ignore", IERSWarning)
         altaz = coord.transform_to(frame)
 
     return float(altaz.alt.degree), float(altaz.az.degree)
