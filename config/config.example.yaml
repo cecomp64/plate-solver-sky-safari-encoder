@@ -1,0 +1,56 @@
+# Copy to config.yaml and fill in your real site location.
+# config.yaml is gitignored so your location doesn't end up in git history.
+
+site:
+  # Your observing site. Needed to convert the plate solver's RA/Dec fix
+  # into Alt/Az for the SkySafari encoder protocol. There's no GPS in v1,
+  # so this is a fixed point you update by hand if you observe elsewhere -
+  # a wrong value here biases every reported position by roughly the same
+  # amount your real location differs from it.
+  latitude_deg: 0.0
+  longitude_deg: 0.0
+  elevation_m: 0.0
+
+camera:
+  # Exposure/gain for a long, unattended night-sky still. Start here and
+  # adjust based on scripts/solve_once.py's star-count output: too few
+  # stars -> raise exposure_ms or gain; blown-out/trailed stars -> lower
+  # exposure_ms.
+  exposure_ms: 2000
+  gain: 8.0
+  width: 2592
+  height: 1944
+
+solver:
+  # null = use cedar-solve's bundled default_database (fine for bring-up).
+  # Once you've measured your camera+lens's real field of view, build a
+  # matched database with scripts/build_database.py and point this at it -
+  # it solves noticeably faster and more reliably than the default.
+  database_path: null
+  fov_estimate_deg: 60.0
+  sigma: 8.0
+  solve_timeout_ms: 3000
+
+cedar_detect:
+  address: "localhost:50051"
+
+encoder:
+  # SkySafari connection. Matches the esp32_push_to project's settings so
+  # an existing SkySafari scope profile keeps working unchanged.
+  bind_host: "0.0.0.0"
+  bind_port: 4030
+  az_resolution: 36000
+  alt_resolution: 36000
+  # Flip an axis if it reads backwards in SkySafari once connected -
+  # same idea as FLIP_AZIMUTH/FLIP_ALTITUDE in esp32_push_to.
+  flip_azimuth: false
+  flip_altitude: false
+
+loop:
+  # Floor on how often to capture+solve, in seconds. Solving is the
+  # bottleneck (typically much slower than this); this just prevents
+  # hammering the camera if a solve ever returns unusually fast.
+  min_interval_s: 0.5
+  # Log a warning if the encoder server is serving a fix older than this
+  # (camera occluded, solver failing, etc).
+  stale_fix_warn_s: 10.0

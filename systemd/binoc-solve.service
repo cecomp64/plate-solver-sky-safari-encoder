@@ -1,0 +1,13 @@
+[Unit]
+Description=Binocular Plate-Solver Push-To (SkySafari encoder bridge)
+After=network.target cedar-detect.service
+Requires=cedar-detect.service
+
+[Service]
+ExecStart=%h/plate-solver-sky-safari-encoder/.venv/bin/python -m binoc_solve.main --config %h/plate-solver-sky-safari-encoder/config/config.yaml
+WorkingDirectory=%h/plate-solver-sky-safari-encoder
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

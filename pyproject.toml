@@ -1,0 +1,28 @@
+[project]
+name = "binoc-solve"
+version = "0.1.0"
+description = "Plate-solving push-to bridge for astro binoculars, feeding SkySafari over Wi-Fi as a virtual encoder."
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "astropy",
+    "pyyaml",
+    "grpcio",
+    "grpcio-tools",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+# Installed separately on the Pi via SETUP.md (needs picamera2/libcamera,
+# only available as an apt package, not pip-installable off-Pi).
+camera = []
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

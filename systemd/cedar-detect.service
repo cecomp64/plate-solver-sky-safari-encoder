@@ -1,0 +1,12 @@
+[Unit]
+Description=Cedar Detect Star Centroid Server
+After=network.target
+
+[Service]
+ExecStart=%h/cedar-detect/target/release/cedar-detect-server
+WorkingDirectory=%h/cedar-detect
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

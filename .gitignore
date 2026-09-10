@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+build/
+
+# Config with real site location / secrets
+config/config.yaml
+
+# Generated star databases (large, machine-specific)
+*.npz
+!config/*.example.yaml
+
+# Local systemd overrides
+systemd/*.local.service
+
+# OS
+.DS_Store
