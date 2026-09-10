@@ -30,10 +30,23 @@ FOCAL_LENGTH_PX = FOCAL_LENGTH_MM / PIXEL_PITCH_MM  # ~2571.4 px
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 DEFAULT_CATALOG = DATA_DIR / "bright_stars.csv"
 
-# Orion: bright, instantly recognizable, straddles the celestial equator
-# so it's a reasonable test target from most latitudes.
-DEFAULT_RA_DEG = 83.75
-DEFAULT_DEC_DEG = -1.5
+# Named test fields spanning both hemispheres - a whole-sky Tetra3
+# database (see build_database.py / SETUP.md step 10; cedar-solve always
+# builds whole-sky, there's no per-hemisphere option) should solve all
+# three. "ursa-major" and "crux" specifically exist to prove that, not
+# just the equator-straddling default ("orion").
+FIELD_PRESETS: dict[str, tuple[float, float]] = {
+    "orion": (83.75, -1.5),  # bright, unmistakable, straddles the celestial equator
+    "ursa-major": (183.0, 55.0),  # the Big Dipper (Dubhe/Merak/Alioth/Alkaid)
+    "crux": (203.0, -61.0),  # Southern Cross + the Pointers (Acrux/Hadar/Rigil Kentaurus)
+    # Deep southern sky, far from the Milky Way's star-rich band - a good
+    # stress test for solving in a comparatively star-sparse field.
+    "lmc": (80.894, -69.756),  # Large Magellanic Cloud
+    "smc": (13.187, -72.828),  # Small Magellanic Cloud
+    # LMC and SMC are ~20.7deg apart - both fit in one 53.5x41.4deg frame
+    # centered on their (great-circle) midpoint.
+    "magellanic-clouds": (50.081, -74.272),
+}
 
 
 def horizontal_fov_deg(width_px: int = SENSOR_WIDTH_PX, focal_length_px: float = FOCAL_LENGTH_PX) -> float:

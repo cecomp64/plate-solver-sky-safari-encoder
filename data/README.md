@@ -15,7 +15,10 @@ License: [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
 Used by `scripts/generate_test_image.py` to render synthetic star-field
 test images with a known ground-truth solution, for exercising the
 cedar-detect/cedar-solve pipeline without a camera or a real night-sky
-capture.
+capture. Note: mag 6.5 is a hard ceiling on what's *in the file* -
+`generate_test_image.py --max-mag` can only restrict further (e.g. 5.0
+for a sparser test field), not go deeper than 6.5, since fainter stars
+were never extracted from HYG in the first place.
 
 ## *.npz (gitignored)
 

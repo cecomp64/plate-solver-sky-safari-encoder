@@ -180,29 +180,49 @@ python scripts/build_database.py --max-fov 55 --save-as data/ov5647_stock_lens
 Takes a few minutes. Then in `config.yaml`, set
 `solver.database_path: data/ov5647_stock_lens`.
 
+**This one database covers the whole sky, both hemispheres, with no
+extra steps** - `generate_database()` always builds from the full star
+catalog (RA 0-360, Dec -90 to +90); cedar-solve has no per-hemisphere or
+per-region option to configure. You don't need to think about this again
+even if you take the binoculars somewhere south of the equator - it's
+step 11 below that actually proves it, rather than just taking that on
+faith.
+
 (If you later swap in a different lens, rebuild with `--max-fov` set to
 that lens's actual FOV and repeat step 11 below - a database built for
 one FOV won't solve images at a substantially different one.)
 
-## 11. Verify the solver on a synthetic test image
+## 11. Verify the solver on synthetic test images (both hemispheres)
 
 Before ever pointing the camera at real sky, confirm cedar-detect and
 cedar-solve are wired up correctly and the database from step 10
-actually solves at this camera's geometry - using a rendered image with
-a known correct answer, so there's no ambiguity about whether a bad
-result means "solver problem" or "bad photo":
+actually solves at this camera's geometry - using rendered images with a
+known correct answer, so there's no ambiguity about whether a bad result
+means "solver problem" or "bad photo". Three named test fields are
+built in, spanning both hemispheres (see `FIELD_PRESETS` in
+`synthetic_sky.py`):
 
 ```
-python scripts/generate_test_image.py
-python scripts/solve_image.py test_images/synthetic_test.png
+python scripts/generate_test_image.py --field orion        # celestial equator
+python scripts/generate_test_image.py --field ursa-major    # northern (the Big Dipper)
+python scripts/generate_test_image.py --field crux          # southern (the Southern Cross)
+
+python scripts/solve_image.py test_images/synthetic_orion.png
+python scripts/solve_image.py test_images/synthetic_ursa-major.png
+python scripts/solve_image.py test_images/synthetic_crux.png
 ```
 
-`generate_test_image.py` prints the ground-truth `RA=... Dec=...
-FOV=53.5`; `solve_image.py`'s `SOLVED: RA=... Dec=...` should land within
-a fraction of a degree of it. If it says "No solve", double check
-`solver.database_path` in `config.yaml` actually points at step 10's
-database (not still `null`), and that `cedar-detect-server` is running
-(see step 12 below for starting it manually).
+Each `generate_test_image.py` run prints its ground-truth `RA=... Dec=...
+FOV=53.5`; each `solve_image.py` run's `SOLVED: RA=... Dec=...` should
+land within a fraction of a degree of the corresponding one. All three
+solving correctly is what actually demonstrates the database from step
+10 works regardless of which hemisphere you're observing from - not just
+the equator-straddling default field.
+
+If any say "No solve", double check `solver.database_path` in
+`config.yaml` actually points at step 10's database (not still `null`),
+and that `cedar-detect-server` is running (see step 12 below for
+starting it manually).
 
 ## 12. Sanity-check the pipeline with a real capture (before touching SkySafari)
 

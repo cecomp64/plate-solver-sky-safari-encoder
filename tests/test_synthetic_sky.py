@@ -6,6 +6,7 @@ from astropy import units as u
 from astropy.coordinates import SkyCoord
 
 from binoc_solve.synthetic_sky import (
+    FIELD_PRESETS,
     FOCAL_LENGTH_PX,
     SENSOR_HEIGHT_PX,
     SENSOR_WIDTH_PX,
@@ -16,6 +17,15 @@ from binoc_solve.synthetic_sky import (
     radec_to_pixel,
     render,
 )
+
+
+def test_field_presets_span_both_hemispheres():
+    assert "orion" in FIELD_PRESETS
+    for ra_deg, dec_deg in FIELD_PRESETS.values():
+        assert 0.0 <= ra_deg < 360.0
+        assert -90.0 <= dec_deg <= 90.0
+    assert FIELD_PRESETS["ursa-major"][1] > 0  # northern
+    assert FIELD_PRESETS["crux"][1] < 0  # southern
 
 
 def test_field_center_maps_to_image_center():

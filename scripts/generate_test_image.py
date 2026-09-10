@@ -11,8 +11,10 @@ rather than guessing whether an unfamiliar real photo "looks about
 right".
 
 Default field is Orion - bright, unmistakable, and near the celestial
-equator so it's visible from most latitudes. Pass --ra/--dec for a
-different field.
+equator so it's visible from most latitudes. Pass --field ursa-major or
+--field crux to generate a northern- or southern-hemisphere field
+instead (see FIELD_PRESETS in synthetic_sky.py), or --ra/--dec for any
+field center of your choosing.
 """
 from __future__ import annotations
 
@@ -24,8 +26,7 @@ from PIL import Image
 
 from binoc_solve.synthetic_sky import (
     DEFAULT_CATALOG,
-    DEFAULT_DEC_DEG,
-    DEFAULT_RA_DEG,
+    FIELD_PRESETS,
     SENSOR_HEIGHT_PX,
     SENSOR_WIDTH_PX,
     horizontal_fov_deg,
@@ -36,31 +37,37 @@ from binoc_solve.synthetic_sky import (
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--ra", type=float, default=DEFAULT_RA_DEG, help="Field center RA, degrees")
-    parser.add_argument("--dec", type=float, default=DEFAULT_DEC_DEG, help="Field center Dec, degrees")
+    parser.add_argument("--field", choices=sorted(FIELD_PRESETS), default="orion", help="Named test field")
+    parser.add_argument("--ra", type=float, default=None, help="Field center RA, degrees (overrides --field)")
+    parser.add_argument("--dec", type=float, default=None, help="Field center Dec, degrees (overrides --field)")
     parser.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG)
-    parser.add_argument("--out", type=Path, default=Path("test_images/synthetic_test.png"))
+    parser.add_argument("--out", type=Path, default=None)
     parser.add_argument("--max-mag", type=float, default=6.5, help="Faintest star magnitude to include")
     args = parser.parse_args()
+
+    preset_ra, preset_dec = FIELD_PRESETS[args.field]
+    ra = args.ra if args.ra is not None else preset_ra
+    dec = args.dec if args.dec is not None else preset_dec
+    out = args.out if args.out is not None else Path(f"test_images/synthetic_{args.field}.png")
 
     catalog = load_catalog(args.catalog, max_mag=args.max_mag)
     if not catalog:
         print(f"No catalog stars at mag<={args.max_mag} - check --catalog path.", file=sys.stderr)
         return 1
 
-    image, placed = render(args.ra, args.dec, catalog)
+    image, placed = render(ra, dec, catalog)
     if not placed:
         print(
-            f"Warning: 0 stars fell inside the frame for RA={args.ra} Dec={args.dec} - "
+            f"Warning: 0 stars fell inside the frame for RA={ra} Dec={dec} - "
             "is that field center correct?",
             file=sys.stderr,
         )
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(image, mode="L").save(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(image, mode="L").save(out)
 
-    print(f"Wrote {args.out} ({SENSOR_WIDTH_PX}x{SENSOR_HEIGHT_PX}, {len(placed)} stars placed)")
-    print(f"Ground truth: RA={args.ra:.4f} Dec={args.dec:.4f}  FOV={horizontal_fov_deg():.1f} deg (horizontal)")
+    print(f"Wrote {out} ({SENSOR_WIDTH_PX}x{SENSOR_HEIGHT_PX}, {len(placed)} stars placed)")
+    print(f"Ground truth: RA={ra:.4f} Dec={dec:.4f}  FOV={horizontal_fov_deg():.1f} deg (horizontal)")
     print("Brightest stars placed:")
     for star in sorted(placed, key=lambda p: p.mag)[:10]:
         label = star.name or "(unnamed)"

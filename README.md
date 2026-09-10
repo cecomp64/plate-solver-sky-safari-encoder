@@ -92,9 +92,13 @@ a value you already know is right), and `scripts/solve_image.py` runs it
 through the real cedar-detect/cedar-solve pipeline:
 
 ```
-python scripts/generate_test_image.py            # writes test_images/synthetic_test.png (Orion, by default)
-python scripts/solve_image.py test_images/synthetic_test.png
+python scripts/generate_test_image.py --field orion       # writes test_images/synthetic_orion.png
+python scripts/solve_image.py test_images/synthetic_orion.png
 ```
+
+`--field` also takes `ursa-major` (northern) or `crux` (southern) - see
+SETUP.md step 11 for verifying a from-scratch database solves correctly
+in both hemispheres, not just at the default equator-straddling field.
 
 ## Setup
 
@@ -124,7 +128,8 @@ services, Wi-Fi AP, SkySafari configuration).
     (synthetic or real) instead of a live camera capture.
   - `generate_test_image.py` - renders a synthetic star-field image at
     this camera's real FOV from a real star catalog, with a known
-    ground-truth solution.
+    ground-truth solution. `--field orion|ursa-major|crux` picks a
+    built-in northern/southern/equatorial test field.
   - `build_database.py` - builds a Tetra3 star database matched to your
     camera's actual field of view (required at this camera's ~53.5deg
     FOV - see "Camera field of view" above).
