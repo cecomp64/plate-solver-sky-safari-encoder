@@ -38,14 +38,20 @@ same 36000 steps/rev.
 | CSI camera module (5MP, OV5647-based) | Ribbon-cable camera, not USB. Check the ribbon's connector pitch matches the Pi 5's camera port (small pitch) - some of these modules ship with the older large-pitch ribbon; a cheap adapter cable fixes either way. |
 | microSD card | 16GB+ |
 | USB-C power bank | Sized for a night's session; the Pi 5 has no built-in battery. |
+| Momentary pushbutton | Cycles between your configured observing locations. No extra LED needed - it reuses the Pi's built-in power LED as the indicator. See [SETUP.md](SETUP.md) for wiring. |
 
 Not used in v1 (per current scope): GPS module, on-device display, the
 Arduino Mega/Uno/Nano boards (they're 8-bit AVR MCUs - can't run this
 software stack at all).
 
 **No GPS/display means:**
-- Your observing site's latitude/longitude is a fixed value you set in
-  `config/config.yaml` by hand (see below), not auto-detected.
+- Your observing sites' latitude/longitude are fixed values you set in
+  `config/config.yaml` by hand (see below), not auto-detected. If you
+  observe from more than one site, a button (wired to the Pi's GPIO)
+  lets you switch between your configured locations in the field: press
+  to cycle, the Pi's built-in power LED blinks out (1-indexed) which one
+  is now active, and the selection is remembered across power cycles.
+  See [SETUP.md](SETUP.md) for wiring.
 - The Pi's system clock must be correct **before** you disconnect from
   the internet to go observe - it hosts its own Wi-Fi access point in
   the field (mirroring `esp32_push_to`'s setup), so it can't reach an

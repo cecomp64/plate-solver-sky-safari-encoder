@@ -6,12 +6,19 @@ from pathlib import Path
 
 import yaml
 
+from binoc_solve.locations import NamedLocation
+
 
 @dataclass(frozen=True)
-class SiteConfig:
-    latitude_deg: float
-    longitude_deg: float
-    elevation_m: float
+class LocationSelectorConfig:
+    button_gpio: int
+    led_name: str
+    state_file: str
+    bounce_time_s: float
+    blink_on_s: float
+    blink_off_s: float
+    blink_repeat_pause_s: float
+    blink_repeats: int
 
 
 @dataclass(frozen=True)
@@ -53,7 +60,8 @@ class LoopConfig:
 
 @dataclass(frozen=True)
 class Config:
-    site: SiteConfig
+    locations: list[NamedLocation]
+    location_selector: LocationSelectorConfig
     camera: CameraConfig
     solver: SolverConfig
     cedar_detect: CedarDetectConfig
@@ -66,7 +74,8 @@ class Config:
         with path.open("r") as f:
             raw = yaml.safe_load(f)
         return Config(
-            site=SiteConfig(**raw["site"]),
+            locations=[NamedLocation(**loc) for loc in raw["locations"]],
+            location_selector=LocationSelectorConfig(**raw["location_selector"]),
             camera=CameraConfig(**raw["camera"]),
             solver=SolverConfig(**raw["solver"]),
             cedar_detect=CedarDetectConfig(**raw["cedar_detect"]),

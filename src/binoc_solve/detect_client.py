@@ -12,17 +12,6 @@ from multiprocessing import shared_memory
 import grpc
 import numpy as np
 
-# cedar-solve's `tetra3` package vendors the generated gRPC stubs
-# (tetra3/cedar_detect_pb2*.py) alongside the Tetra3 solver itself - see
-# SETUP.md. Fall back to a bare import in case they're only on the path
-# as standalone modules (e.g. generated directly from cedar-detect's own
-# proto per its README, rather than via cedar-solve's copy).
-try:
-    from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc
-except ImportError:  # pragma: no cover - depends on target install layout
-    import cedar_detect_pb2
-    import cedar_detect_pb2_grpc
-
 logger = logging.getLogger(__name__)
 
 _SHMEM_NAME = "/binoc_solve_image"
@@ -30,6 +19,23 @@ _SHMEM_NAME = "/binoc_solve_image"
 
 class DetectClient:
     def __init__(self, address: str, sigma: float) -> None:
+        # cedar-solve's `tetra3` package vendors the generated gRPC stubs
+        # (tetra3/cedar_detect_pb2*.py) alongside the Tetra3 solver itself -
+        # see SETUP.md. Imported here (not at module level) so this module,
+        # and anything that imports it (including main.py), stays importable
+        # without cedar-solve installed - see scripts/simulate_skysafari.py,
+        # which needs exactly that to run without the full solver stack.
+        # Falls back to a bare import in case the stubs are only on the path
+        # as standalone modules (e.g. generated directly from cedar-detect's
+        # own proto per its README, rather than via cedar-solve's copy).
+        try:
+            from tetra3 import cedar_detect_pb2, cedar_detect_pb2_grpc  # noqa: PLC0415
+        except ImportError:  # pragma: no cover - depends on target install layout
+            import cedar_detect_pb2  # noqa: PLC0415
+            import cedar_detect_pb2_grpc  # noqa: PLC0415
+
+        self._cedar_detect_pb2 = cedar_detect_pb2
+        self._cedar_detect_pb2_grpc = cedar_detect_pb2_grpc
         self._sigma = sigma
         self._channel = grpc.insecure_channel(address)
         self._stub = cedar_detect_pb2_grpc.CedarDetectStub(self._channel)
@@ -43,8 +49,8 @@ class DetectClient:
             shared_image = np.ndarray(image.shape, dtype=image.dtype, buffer=shmem.buf)
             shared_image[:] = image[:]
 
-            request = cedar_detect_pb2.CentroidsRequest(
-                input_image=cedar_detect_pb2.Image(
+            request = self._cedar_detect_pb2.CentroidsRequest(
+                input_image=self._cedar_detect_pb2.Image(
                     width=width, height=height, shmem_name=shmem.name
                 ),
                 sigma=self._sigma,

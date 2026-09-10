@@ -15,6 +15,8 @@ from binoc_solve.camera import Camera
 from binoc_solve.config import Config
 from binoc_solve.detect_client import DetectClient
 from binoc_solve.encoder_server import EncoderTCPServer
+from binoc_solve.location_selector import LocationSelector
+from binoc_solve.locations import LocationStore
 from binoc_solve.solver import Solver
 from binoc_solve.state import LatestFix
 
@@ -26,6 +28,7 @@ def _solve_loop(
     camera: Camera,
     detect: DetectClient,
     solver: Solver,
+    location_store: LocationStore,
     latest_fix: LatestFix,
     stop_event: threading.Event,
 ) -> None:
@@ -42,19 +45,22 @@ def _solve_loop(
         if result is None:
             logger.info("No solve this cycle (%d centroids)", len(centroids))
         else:
+            # Re-read every cycle so a button press mid-session takes effect
+            # on the very next solve, not just at startup.
+            location = location_store.current()
             when_utc = dt.datetime.now(dt.timezone.utc)
             alt_deg, az_deg = radec_to_altaz(
                 result.ra_deg,
                 result.dec_deg,
-                config.site.latitude_deg,
-                config.site.longitude_deg,
-                config.site.elevation_m,
+                location.latitude_deg,
+                location.longitude_deg,
+                location.elevation_m,
                 when_utc,
             )
             latest_fix.update(alt_deg=alt_deg, az_deg=az_deg)
             logger.info(
-                "Solved: RA=%.3f Dec=%.3f (%d matches) -> Alt=%.2f Az=%.2f",
-                result.ra_deg, result.dec_deg, result.num_matches, alt_deg, az_deg,
+                "Solved (%s): RA=%.3f Dec=%.3f (%d matches) -> Alt=%.2f Az=%.2f",
+                location.name, result.ra_deg, result.dec_deg, result.num_matches, alt_deg, az_deg,
             )
 
         elapsed = time.monotonic() - cycle_start
@@ -75,6 +81,9 @@ def main() -> None:
     )
 
     config = Config.load(args.config)
+
+    location_store = LocationStore(config.locations, config.location_selector.state_file)
+    location_selector = LocationSelector(config.location_selector, location_store)
 
     camera = Camera(config.camera)
     detect = DetectClient(config.cedar_detect.address, config.solver.sigma)
@@ -99,11 +108,12 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
 
     try:
-        _solve_loop(config, camera, detect, solver, latest_fix, stop_event)
+        _solve_loop(config, camera, detect, solver, location_store, latest_fix, stop_event)
     finally:
         encoder_server.shutdown()
         encoder_server.server_close()
         camera.close()
+        location_selector.close()
 
 
 if __name__ == "__main__":
