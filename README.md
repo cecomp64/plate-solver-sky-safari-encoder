@@ -59,6 +59,43 @@ software stack at all).
   before heading out; a Pi 5 without a battery-backed RTC will drift a
   few seconds over a session, which is well within push-to tolerance.
 
+## Camera field of view
+
+The camera is an OV5647 sensor (5MP, 1/4" optical format, 1.4um pixels,
+2592x1944) on the stock fixed-focus 3.6mm M12 lens that ships on
+essentially every OV5647-based Raspberry Pi Camera Module v1 clone,
+including this one. FOV from the standard pinhole formula
+`2*atan(sensor_dimension / (2*focal_length))`:
+
+| | |
+| :-- | :-- |
+| Horizontal FOV | **53.5 deg** |
+| Vertical FOV | 41.4 deg |
+| Diagonal FOV | 64.4 deg |
+| Plate scale | ~74 arcsec/pixel |
+
+**This matters more than it might look**: cedar-solve's bundled
+`default_database` only covers 10-30 deg FOV. At 53.5 deg this camera's
+stock lens is well outside that range, so `config.yaml`'s
+`solver.database_path: null` (the bundled default) will fail to solve
+real images from it, not just solve them slower - see SETUP.md step 12,
+building a matched database with `scripts/build_database.py` isn't
+optional here. `solver.fov_estimate_deg` in `config.example.yaml` is
+already set to 53.5 to match.
+
+To verify the solve pipeline actually works at this FOV before ever
+pointing the camera at a real sky - or before your database build is
+even done - `scripts/generate_test_image.py` renders a synthetic
+star-field image at this exact camera geometry from a real star catalog
+(known ground-truth RA/Dec, so you can check the solver's answer against
+a value you already know is right), and `scripts/solve_image.py` runs it
+through the real cedar-detect/cedar-solve pipeline:
+
+```
+python scripts/generate_test_image.py            # writes test_images/synthetic_test.png (Orion, by default)
+python scripts/solve_image.py test_images/synthetic_test.png
+```
+
 ## Setup
 
 See [SETUP.md](SETUP.md) for the full Pi bring-up walkthrough (OS image,
@@ -67,19 +104,42 @@ services, Wi-Fi AP, SkySafari configuration).
 
 ## Repo layout
 
-- `src/binoc_solve/` - the application: camera capture, the cedar-detect
-  gRPC client, the cedar-solve wrapper, RA/Dec->Alt/Az conversion, the
-  SkySafari TCP server, and the main solve loop.
-- `scripts/solve_once.py` - single-shot capture+solve+print, for
-  validating the pipeline on the Pi before ever involving SkySafari.
-- `scripts/build_database.py` - builds a Tetra3 star database matched to
-  your camera's actual field of view (faster/more reliable solves than
-  the generic bundled database).
+- `src/binoc_solve/` - the application:
+  - `camera.py`, `detect_client.py`, `solver.py` - the real
+    camera/cedar-detect/cedar-solve pipeline.
+  - `astro.py` - RA/Dec -> Alt/Az conversion (astropy).
+  - `locations.py`, `location_selector.py`, `power_led.py` - the
+    multi-site button/LED selector (built-in power LED as the indicator).
+  - `encoder_server.py` - the SkySafari TCP server.
+  - `synthetic_sky.py` - the gnomonic-projection math behind the
+    synthetic test image generator.
+  - `fakes.py` - drop-in fake camera/detect/solver for testing the
+    SkySafari link without hardware (see `scripts/simulate_skysafari.py`).
+  - `main.py` - wires it all together; the solve loop + entrypoint.
+- `scripts/`:
+  - `solve_once.py` - single-shot capture+solve+print from the real
+    camera, for validating the pipeline on the Pi before involving
+    SkySafari.
+  - `solve_image.py` - like `solve_once.py` but on a static image file
+    (synthetic or real) instead of a live camera capture.
+  - `generate_test_image.py` - renders a synthetic star-field image at
+    this camera's real FOV from a real star catalog, with a known
+    ground-truth solution.
+  - `build_database.py` - builds a Tetra3 star database matched to your
+    camera's actual field of view (required at this camera's ~53.5deg
+    FOV - see "Camera field of view" above).
+  - `simulate_skysafari.py` - runs the real encoder server with a
+    switchable set of canned solve results instead of a camera, for
+    testing the SkySafari link end-to-end from a laptop.
+- `data/bright_stars.csv` - real star catalog (HYG Database, CC BY-SA
+  4.0) used by `generate_test_image.py`; see `data/README.md`.
 - `systemd/` - service units for `cedar-detect-server` and the main app.
 - `config/config.example.yaml` - copy to `config/config.yaml` and fill in
-  your site location.
-- `tests/` - unit tests for the coordinate math and the SkySafari wire
-  protocol; run with `pytest` on any machine, no Pi/camera required.
+  your site location(s).
+- `tests/` - unit tests for the coordinate math, the SkySafari wire
+  protocol, the location selector, and the synthetic-image projection
+  (cross-checked against astropy independently); run with `pytest` on
+  any machine, no Pi/camera required.
 
 ## Background
 

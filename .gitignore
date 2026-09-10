@@ -17,6 +17,9 @@ state/
 *.npz
 !config/*.example.yaml
 
+# Generated test images (regenerate with scripts/generate_test_image.py)
+test_images/
+
 # Local systemd overrides
 systemd/*.local.service
 
