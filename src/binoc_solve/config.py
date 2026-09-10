@@ -22,6 +22,17 @@ class LocationSelectorConfig:
 
 
 @dataclass(frozen=True)
+class SimulatorSelectorConfig:
+    button_gpio: int
+    led_name: str
+    bounce_time_s: float
+    blink_on_s: float
+    blink_off_s: float
+    blink_repeat_pause_s: float
+    blink_repeats: int
+
+
+@dataclass(frozen=True)
 class CameraConfig:
     exposure_ms: int
     gain: float
@@ -62,6 +73,7 @@ class LoopConfig:
 class Config:
     locations: list[NamedLocation]
     location_selector: LocationSelectorConfig
+    simulator_selector: SimulatorSelectorConfig
     camera: CameraConfig
     solver: SolverConfig
     cedar_detect: CedarDetectConfig
@@ -76,6 +88,7 @@ class Config:
         return Config(
             locations=[NamedLocation(**loc) for loc in raw["locations"]],
             location_selector=LocationSelectorConfig(**raw["location_selector"]),
+            simulator_selector=SimulatorSelectorConfig(**raw["simulator_selector"]),
             camera=CameraConfig(**raw["camera"]),
             solver=SolverConfig(**raw["solver"]),
             cedar_detect=CedarDetectConfig(**raw["cedar_detect"]),

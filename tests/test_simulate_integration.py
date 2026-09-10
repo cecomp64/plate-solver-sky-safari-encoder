@@ -15,12 +15,14 @@ from binoc_solve.config import (
     EncoderConfig,
     LocationSelectorConfig,
     LoopConfig,
+    SimulatorSelectorConfig,
     SolverConfig,
 )
 from binoc_solve.encoder_server import EncoderTCPServer, _alt_deg_to_ticks, _az_deg_to_ticks
 from binoc_solve.fakes import CannedSolution, FakeCamera, FakeDetectClient, FakeSolver
 from binoc_solve.locations import LocationStore, NamedLocation
 from binoc_solve.main import _solve_loop
+from binoc_solve.simulator_toggle import SimulatorToggle
 from binoc_solve.state import LatestFix
 
 
@@ -29,6 +31,10 @@ def _build_config(tmp_path) -> Config:
         locations=[NamedLocation("Test Site", latitude_deg=40.0, longitude_deg=-105.0, elevation_m=1600.0)],
         location_selector=LocationSelectorConfig(
             button_gpio=17, led_name="PWR", state_file=str(tmp_path / "active_location.txt"),
+            bounce_time_s=0.05, blink_on_s=0.1, blink_off_s=0.1, blink_repeat_pause_s=0.5, blink_repeats=1,
+        ),
+        simulator_selector=SimulatorSelectorConfig(
+            button_gpio=27, led_name="ACT",
             bounce_time_s=0.05, blink_on_s=0.1, blink_off_s=0.1, blink_repeat_pause_s=0.5, blink_repeats=1,
         ),
         camera=CameraConfig(exposure_ms=1000, gain=1.0, width=16, height=16),
@@ -52,9 +58,16 @@ def test_simulated_solve_reaches_skysafari_over_real_socket(tmp_path):
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
     stop_event = threading.Event()
+    camera, detect = FakeCamera(), FakeDetectClient()
     solve_thread = threading.Thread(
         target=_solve_loop,
-        args=(config, FakeCamera(), FakeDetectClient(), solver, location_store, latest_fix, stop_event),
+        args=(
+            config,
+            camera, detect, solver,
+            camera, detect, solver,
+            location_store, SimulatorToggle(),
+            latest_fix, stop_event,
+        ),
         daemon=True,
     )
     solve_thread.start()
@@ -94,9 +107,16 @@ def test_switching_solutions_changes_the_served_fix(tmp_path):
     )
     latest_fix = LatestFix()
     stop_event = threading.Event()
+    camera, detect = FakeCamera(), FakeDetectClient()
     solve_thread = threading.Thread(
         target=_solve_loop,
-        args=(config, FakeCamera(), FakeDetectClient(), solver, location_store, latest_fix, stop_event),
+        args=(
+            config,
+            camera, detect, solver,
+            camera, detect, solver,
+            location_store, SimulatorToggle(),
+            latest_fix, stop_event,
+        ),
         daemon=True,
     )
     solve_thread.start()

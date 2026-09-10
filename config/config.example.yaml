@@ -45,6 +45,30 @@ location_selector:
   blink_repeat_pause_s: 0.8
   blink_repeats: 2
 
+simulator_selector:
+  # A second button that flips the solve loop between the real camera/
+  # cedar-detect/cedar-solve pipeline and a set of canned RA/Dec
+  # solutions (binoc_solve/fakes.py) - lets you demo/test the SkySafari
+  # integration (crosshair placement, encoder protocol) without pointing
+  # at open sky. Wired the same way as location_selector's button (one
+  # leg to this pin, other leg to GND), but to a different pin. Always
+  # starts on the real pipeline at boot - unlike the location selection,
+  # this is not persisted, so a forgotten press can't silently serve
+  # fake positions after a power cycle in the field.
+  button_gpio: 27
+  # The Pi's ACT (activity) LED, distinct from location_selector's PWR
+  # LED so both indicators are visible at once. Same case-insensitive
+  # substring match against /sys/class/leds/* - run `ls /sys/class/leds/`
+  # to see what's on your board if "ACT" doesn't match.
+  led_name: "ACT"
+  bounce_time_s: 0.05
+  # Blink timing: 1 blink = real pipeline, 2 blinks = simulator, each
+  # blink_repeats times over.
+  blink_on_s: 0.15
+  blink_off_s: 0.15
+  blink_repeat_pause_s: 0.8
+  blink_repeats: 2
+
 camera:
   # Exposure/gain for a long, unattended night-sky still. Start here and
   # adjust based on scripts/solve_once.py's star-count output: too few

@@ -12,8 +12,11 @@ the camera/cedar-detect/cedar-solve pipeline replaced.
 from __future__ import annotations
 
 import logging
+import math
 import threading
+import time
 from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
 
@@ -111,3 +114,70 @@ class FakeSolver:
 
     def list_names(self) -> list[str]:
         return [s.name for s in self._solutions]
+
+
+@dataclass(frozen=True)
+class SlewCenter:
+    name: str
+    ra_deg: float
+    dec_deg: float
+
+
+# M31/Andromeda (J2000) - bright, widely recognized, and far enough from
+# the celestial pole that a +-5 deg swing stays well clear of any RA
+# wraparound or declination-clamping edge cases.
+ANDROMEDA = SlewCenter("Andromeda (M31)", ra_deg=10.68, dec_deg=41.27)
+
+
+class SlewingFakeSolver:
+    """Continuously reports a smoothly moving RA/Dec that circles a fixed
+    center - default Andromeda - swinging +-amplitude_deg east/west and
+    north/south, tracing one full circuit every period_s seconds.
+
+    Unlike FakeSolver's discrete named-star list, this needs no next()/
+    select() calls to see the position change - it's driven by elapsed
+    time alone. That's the point: SimulatorSelector's physical button
+    only toggles the simulator on/off (see simulator_selector.py), with
+    no keyboard in the field to cycle through canned stars, so a
+    continuously moving position is what actually demonstrates the
+    SkySafari crosshair tracking a solve.
+
+    East/west motion is along RA, scaled by 1/cos(dec) so amplitude_deg
+    means that many true angular degrees on the sky rather than degrees
+    of RA (which compress toward the pole - RA degrees are worth less
+    the higher the declination). North/south is Dec, a quarter period
+    out of phase with RA, so the path traces a circle rather than
+    retracing a straight line back and forth.
+    """
+
+    def __init__(
+        self,
+        center: SlewCenter = ANDROMEDA,
+        amplitude_deg: float = 5.0,
+        period_s: float = 20.0,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._center = center
+        self._amplitude_deg = amplitude_deg
+        self._period_s = period_s
+        self._clock = clock
+        self._start = clock()
+
+    def solve(self, centroids: list[tuple[float, float]], image_size: tuple[int, int]) -> SolveResult:
+        elapsed = self._clock() - self._start
+        phase = 2 * math.pi * (elapsed / self._period_s)
+
+        ra_scale = 1.0 / math.cos(math.radians(self._center.dec_deg))
+        ra_deg = (self._center.ra_deg + self._amplitude_deg * ra_scale * math.sin(phase)) % 360.0
+        dec_deg = self._center.dec_deg + self._amplitude_deg * math.cos(phase)
+
+        return SolveResult(
+            ra_deg=ra_deg,
+            dec_deg=dec_deg,
+            roll_deg=0.0,
+            fov_deg=30.0,
+            num_matches=20,
+        )
+
+    def current_name(self) -> str:
+        return f"{self._center.name} (slewing)"
