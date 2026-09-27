@@ -11,6 +11,7 @@ import threading
 import time
 
 from binoc_solve.astro import radec_to_altaz
+from binoc_solve.auto_exposure import AutoExposureController
 from binoc_solve.camera import Camera
 from binoc_solve.config import Config
 from binoc_solve.detect_client import DetectClient
@@ -40,6 +41,7 @@ def _solve_loop(
     mode_store: ModeStore,
     latest_fix: LatestFix,
     stop_event: threading.Event,
+    auto_exposure: AutoExposureController | None = None,
 ) -> None:
     image_size = (config.camera.height, config.camera.width)
 
@@ -53,8 +55,17 @@ def _solve_loop(
         camera, detect, solver = pipelines[mode]
 
         image = camera.capture_gray()
-        centroids = detect.extract_centroids(image)
+        detection = detect.extract_centroids(image)
+        centroids = detection.centroids
         logger.debug("Captured frame, %d star centroids", len(centroids))
+
+        # Only the real camera's own captures say anything about real sky
+        # brightness - the simulator/synthetic modes' images aren't fed
+        # back into exposure control.
+        if auto_exposure is not None and mode == Mode.REAL:
+            new_settings = auto_exposure.observe(len(centroids), detection.peak_star_pixel)
+            if new_settings is not None:
+                camera.set_exposure(new_settings.exposure_ms, new_settings.gain)
 
         result = solver.solve(centroids, image_size)
         if result is None:
@@ -103,6 +114,9 @@ def main() -> None:
     simulator_selector = SimulatorSelector(config.simulator_selector, mode_store)
 
     real_camera = Camera(config.camera)
+    auto_exposure = AutoExposureController(
+        config.auto_exposure, config.camera.exposure_ms, config.camera.gain
+    )
     real_detect = DetectClient(config.cedar_detect.address, config.solver.sigma)
     real_solver = Solver(config.solver)
     fake_camera = FakeCamera()
@@ -141,7 +155,9 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
 
     try:
-        _solve_loop(config, pipelines, location_store, mode_store, latest_fix, stop_event)
+        _solve_loop(
+            config, pipelines, location_store, mode_store, latest_fix, stop_event, auto_exposure
+        )
     finally:
         encoder_server.shutdown()
         encoder_server.server_close()

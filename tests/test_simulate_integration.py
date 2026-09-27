@@ -9,6 +9,7 @@ import threading
 import time
 
 from binoc_solve.config import (
+    AutoExposureConfig,
     CameraConfig,
     CedarDetectConfig,
     Config,
@@ -39,6 +40,11 @@ def _build_config(tmp_path) -> Config:
             bounce_time_s=0.05, blink_on_s=0.1, blink_off_s=0.1, blink_repeat_pause_s=0.5, blink_repeats=1,
         ),
         camera=CameraConfig(exposure_ms=1000, gain=1.0, width=16, height=16),
+        auto_exposure=AutoExposureConfig(
+            enabled=False, min_exposure_ms=100, max_exposure_ms=1500, min_gain=1.0, max_gain=16.0,
+            min_centroids=15, saturation_peak=250, low_streak=3, high_streak=2,
+            adjustment_factor=1.4, cooldown_cycles=2,
+        ),
         synthetic_camera=SyntheticCameraConfig(image_dir=str(tmp_path / "test_images"), interval_s=1.5),
         solver=SolverConfig(database_path=None, fov_estimate_deg=30.0, sigma=8.0, solve_timeout_ms=1000),
         cedar_detect=CedarDetectConfig(address="localhost:50051"),

@@ -292,6 +292,16 @@ check focus/lens cap. If stars are detected but it doesn't solve and step
 capture (focus, exposure, or a genuinely cloudy/obstructed view) rather
 than the solver setup itself.
 
+Once this baseline works, `camera.exposure_ms`/`gain` only need to be a
+reasonable starting guess, not exact: the `auto_exposure` section in
+`config.yaml` nudges them at runtime (based on cedar-detect's centroid
+count and peak pixel value each cycle) if real field conditions turn out
+brighter or dimmer than tonight's tuning - there's no laptop in the
+field to redo this step. Set `auto_exposure.enabled: false` to pin the
+configured values exactly instead. On an untracked mount, keep
+`auto_exposure.max_exposure_ms` comfortably under 2s so stars don't
+trail into streaks cedar-detect can't centroid.
+
 ## 13. Run as services
 
 ```
@@ -392,7 +402,12 @@ on a normal DSC.
 - **Solves are rare/slow**: confirm `solver.database_path` isn't still
   `null` (step 10 - required at this camera's ~53.5deg FOV, not just an
   optimization); also check `scripts/solve_once.py`'s star count - too
-  few stars usually means exposure/focus, not solver tuning.
+  few stars usually means exposure/focus, not solver tuning. After a
+  field session with no solves, `journalctl --user -u binoc-solve` will
+  show `Auto-exposure: ...` lines if it was hunting for a working
+  exposure all night (e.g. pinned at `max_exposure_ms` and still
+  starved) - that points at focus, clouds, or `auto_exposure` bounds too
+  narrow for the night's sky, not a config typo.
 - **Positions are off by a consistent amount at a given site**: check
   that the active location's LED blink count actually matches the site
   you're at (easy to forget a press after moving locations), and that

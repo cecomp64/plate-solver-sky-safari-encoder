@@ -74,14 +74,48 @@ simulator_selector:
   blink_repeats: 2
 
 camera:
-  # Exposure/gain for a long, unattended night-sky still. Start here and
-  # adjust based on scripts/solve_once.py's star-count output: too few
-  # stars -> raise exposure_ms or gain; blown-out/trailed stars -> lower
-  # exposure_ms.
-  exposure_ms: 2000
+  # Exposure/gain starting point for a long, unattended night-sky still.
+  # Tune this by hand once, based on scripts/solve_once.py's star-count
+  # output (too few stars -> raise exposure_ms or gain; blown-out/trailed
+  # stars -> lower exposure_ms) - auto_exposure below then nudges these
+  # at runtime if real field conditions (moon, haze, light pollution)
+  # turn out different from tonight's tuning, so this doesn't have to be
+  # exactly right, just a reasonable starting guess.
+  exposure_ms: 1200
   gain: 8.0
   width: 2592
   height: 1944
+
+auto_exposure:
+  # Closed-loop exposure/gain control: there's no laptop in the field to
+  # re-run scripts/solve_once.py if camera.exposure_ms/gain above turn
+  # out wrong for the night's actual sky, so this nudges them at runtime
+  # using cedar-detect's own centroid count and peak pixel value each
+  # cycle instead. Set to false to pin camera.exposure_ms/gain exactly as
+  # configured (the old behavior).
+  enabled: true
+  # IMPORTANT for an untracked mount: keep max_exposure_ms comfortably
+  # under the point where stars start trailing into streaks cedar-detect
+  # can't centroid - well under 2s on most undriven mounts.
+  min_exposure_ms: 200
+  max_exposure_ms: 1500
+  min_gain: 1.0
+  max_gain: 16.0
+  # Fewer than this many centroids for low_streak consecutive cycles ->
+  # raise exposure (then gain, once exposure is already at max_exposure_ms).
+  min_centroids: 15
+  low_streak: 3
+  # A centroid this bright (0-255) for high_streak consecutive cycles
+  # means blown-out/saturated stars -> lower exposure (then gain, once
+  # exposure is already at min_exposure_ms).
+  saturation_peak: 250
+  high_streak: 2
+  # Multiplicative step per adjustment (e.g. 1.4 = +/-40% each time).
+  adjustment_factor: 1.4
+  # Cycles to wait after any adjustment before evaluating again, so one
+  # change has time to show up in a fresh capture before another stacks
+  # on top of it.
+  cooldown_cycles: 2
 
 synthetic_camera:
   # Pre-rendered test images (scripts/generate_test_image.py) that the

@@ -41,6 +41,21 @@ class CameraConfig:
 
 
 @dataclass(frozen=True)
+class AutoExposureConfig:
+    enabled: bool
+    min_exposure_ms: int
+    max_exposure_ms: int
+    min_gain: float
+    max_gain: float
+    min_centroids: int
+    saturation_peak: int
+    low_streak: int
+    high_streak: int
+    adjustment_factor: float
+    cooldown_cycles: int
+
+
+@dataclass(frozen=True)
 class SyntheticCameraConfig:
     image_dir: str
     interval_s: float
@@ -81,6 +96,7 @@ class Config:
     location_selector: LocationSelectorConfig
     simulator_selector: SimulatorSelectorConfig
     camera: CameraConfig
+    auto_exposure: AutoExposureConfig
     synthetic_camera: SyntheticCameraConfig
     solver: SolverConfig
     cedar_detect: CedarDetectConfig
@@ -97,6 +113,7 @@ class Config:
             location_selector=LocationSelectorConfig(**raw["location_selector"]),
             simulator_selector=SimulatorSelectorConfig(**raw["simulator_selector"]),
             camera=CameraConfig(**raw["camera"]),
+            auto_exposure=AutoExposureConfig(**raw["auto_exposure"]),
             synthetic_camera=SyntheticCameraConfig(**raw["synthetic_camera"]),
             solver=SolverConfig(**raw["solver"]),
             cedar_detect=CedarDetectConfig(**raw["cedar_detect"]),

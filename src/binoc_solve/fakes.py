@@ -20,6 +20,7 @@ from typing import Callable
 
 import numpy as np
 
+from binoc_solve.detect_client import DetectionResult
 from binoc_solve.solver import SolveResult
 
 logger = logging.getLogger(__name__)
@@ -61,8 +62,8 @@ class FakeDetectClient:
     """No-op stand-in for DetectClient - FakeSolver ignores centroids
     entirely, so there's nothing for this to compute."""
 
-    def extract_centroids(self, image: np.ndarray) -> list[tuple[float, float]]:
-        return []
+    def extract_centroids(self, image: np.ndarray) -> DetectionResult:
+        return DetectionResult(centroids=[], peak_star_pixel=0, noise_estimate=0.0)
 
 
 class FakeSolver:

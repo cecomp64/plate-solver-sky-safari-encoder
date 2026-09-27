@@ -9,12 +9,24 @@ from __future__ import annotations
 import logging
 import os
 import uuid
+from dataclasses import dataclass
 from multiprocessing import shared_memory
 
 import grpc
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class DetectionResult:
+    """(y, x) centroids plus the two cedar-detect stats auto_exposure.py
+    needs to judge exposure health: peak_star_pixel (0-255, saturation)
+    and noise_estimate (background noise floor)."""
+
+    centroids: list[tuple[float, float]]
+    peak_star_pixel: int
+    noise_estimate: float
 
 
 class DetectClient:
@@ -40,9 +52,10 @@ class DetectClient:
         self._channel = grpc.insecure_channel(address)
         self._stub = cedar_detect_pb2_grpc.CedarDetectStub(self._channel)
 
-    def extract_centroids(self, image: np.ndarray) -> list[tuple[float, float]]:
+    def extract_centroids(self, image: np.ndarray) -> DetectionResult:
         """Returns (y, x) centroids, brightest first - the order and shape
-        Tetra3.solve_from_centroids() expects."""
+        Tetra3.solve_from_centroids() expects - plus the exposure-health
+        stats in DetectionResult."""
         height, width = image.shape[:2]
         # Unique per call, not a fixed name: cedar-detect-server may field
         # requests from more than one process at once (e.g. the live
@@ -89,4 +102,8 @@ class DetectClient:
             "cedar-detect found %d centroids (noise=%.2f, peak=%d)",
             len(centroids), result.noise_estimate, result.peak_star_pixel,
         )
-        return centroids
+        return DetectionResult(
+            centroids=centroids,
+            peak_star_pixel=result.peak_star_pixel,
+            noise_estimate=result.noise_estimate,
+        )

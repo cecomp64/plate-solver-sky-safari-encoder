@@ -78,8 +78,8 @@ def test_fake_camera_returns_valid_gray_image():
 
 
 def test_fake_detect_client_returns_no_centroids():
-    centroids = FakeDetectClient().extract_centroids(np.zeros((4, 4), dtype=np.uint8))
-    assert centroids == []
+    detection = FakeDetectClient().extract_centroids(np.zeros((4, 4), dtype=np.uint8))
+    assert detection.centroids == []
 
 
 def test_slewing_solver_starts_at_north_extreme():
