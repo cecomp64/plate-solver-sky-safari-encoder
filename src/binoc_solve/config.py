@@ -62,11 +62,20 @@ class SyntheticCameraConfig:
 
 
 @dataclass(frozen=True)
+class FailedFramesConfig:
+    enabled: bool
+    dir: str
+    min_interval_s: float
+    max_files: int
+
+
+@dataclass(frozen=True)
 class SolverConfig:
     database_path: str | None
     fov_estimate_deg: float
     sigma: float
     solve_timeout_ms: int
+    match_max_error: float
 
 
 @dataclass(frozen=True)
@@ -98,6 +107,7 @@ class Config:
     camera: CameraConfig
     auto_exposure: AutoExposureConfig
     synthetic_camera: SyntheticCameraConfig
+    failed_frames: FailedFramesConfig
     solver: SolverConfig
     cedar_detect: CedarDetectConfig
     encoder: EncoderConfig
@@ -115,6 +125,7 @@ class Config:
             camera=CameraConfig(**raw["camera"]),
             auto_exposure=AutoExposureConfig(**raw["auto_exposure"]),
             synthetic_camera=SyntheticCameraConfig(**raw["synthetic_camera"]),
+            failed_frames=FailedFramesConfig(**raw["failed_frames"]),
             solver=SolverConfig(**raw["solver"]),
             cedar_detect=CedarDetectConfig(**raw["cedar_detect"]),
             encoder=EncoderConfig(**raw["encoder"]),

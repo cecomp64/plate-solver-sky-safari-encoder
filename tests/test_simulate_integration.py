@@ -14,6 +14,7 @@ from binoc_solve.config import (
     CedarDetectConfig,
     Config,
     EncoderConfig,
+    FailedFramesConfig,
     LocationSelectorConfig,
     LoopConfig,
     SimulatorSelectorConfig,
@@ -46,7 +47,10 @@ def _build_config(tmp_path) -> Config:
             adjustment_factor=1.4, cooldown_cycles=2,
         ),
         synthetic_camera=SyntheticCameraConfig(image_dir=str(tmp_path / "test_images"), interval_s=1.5),
-        solver=SolverConfig(database_path=None, fov_estimate_deg=30.0, sigma=8.0, solve_timeout_ms=1000),
+        failed_frames=FailedFramesConfig(
+            enabled=False, dir=str(tmp_path / "failed_frames"), min_interval_s=30.0, max_files=50,
+        ),
+        solver=SolverConfig(database_path=None, fov_estimate_deg=30.0, sigma=8.0, solve_timeout_ms=1000, match_max_error=0.005),
         cedar_detect=CedarDetectConfig(address="localhost:50051"),
         encoder=EncoderConfig(
             bind_host="127.0.0.1", bind_port=0, az_resolution=36000, alt_resolution=36000,

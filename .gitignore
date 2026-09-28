@@ -13,6 +13,9 @@ config/config.yaml
 # Persisted active-location selection (runtime state, not source)
 state/
 
+# Frames saved by failed_frames in config.yaml (diagnostics, not source)
+failed_frames/
+
 # Generated star databases (large, machine-specific)
 *.npz
 !config/*.example.yaml

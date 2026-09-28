@@ -128,6 +128,19 @@ synthetic_camera:
   image_dir: "test_images"
   interval_s: 1.5
 
+failed_frames:
+  # Saves real-camera frames that failed to solve, so field failures can
+  # be diagnosed afterwards (motion blur vs sky glow vs cloud) and
+  # replayed offline with scripts/solve_image.py. Rate-limited, and only
+  # the newest max_files are kept (dark frames are ~100KB;
+  # noisy ones larger) so a bad night can't fill
+  # the SD card. Relative paths resolve from the working directory
+  # binoc-solve.service runs from (see systemd/binoc-solve.service).
+  enabled: true
+  dir: "failed_frames"
+  min_interval_s: 30.0
+  max_files: 50
+
 solver:
   # IMPORTANT: cedar-solve's bundled default_database only covers 10-30deg
   # FOV. This camera's stock lens (OV5647, 3.6mm M12) is ~53.5deg
@@ -141,6 +154,13 @@ solver:
   fov_estimate_deg: 53.5
   sigma: 8.0
   solve_timeout_ms: 3000
+  # How far a detected star pattern may differ from the catalog's and
+  # still match. cedar-solve's default (0.002) is too tight for the stock
+  # lens: its distortion pushes patterns spanning the wide field outside
+  # that tolerance, so solves only succeed when the bright anchor stars
+  # happen to sit near the center (in practice: near zenith). 0.005
+  # recovered those frames with no false solves on random star fields.
+  match_max_error: 0.005
 
 cedar_detect:
   address: "localhost:50051"

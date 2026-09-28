@@ -15,6 +15,7 @@ from binoc_solve.auto_exposure import AutoExposureController
 from binoc_solve.camera import Camera
 from binoc_solve.config import Config
 from binoc_solve.detect_client import DetectClient
+from binoc_solve.failed_frames import FailedFrameRecorder
 from binoc_solve.encoder_server import EncoderTCPServer
 from binoc_solve.fakes import FakeCamera, FakeDetectClient, SlewingFakeSolver
 from binoc_solve.location_selector import LocationSelector
@@ -42,6 +43,7 @@ def _solve_loop(
     latest_fix: LatestFix,
     stop_event: threading.Event,
     auto_exposure: AutoExposureController | None = None,
+    failed_frames: FailedFrameRecorder | None = None,
 ) -> None:
     image_size = (config.camera.height, config.camera.width)
 
@@ -70,6 +72,9 @@ def _solve_loop(
         result = solver.solve(centroids, image_size)
         if result is None:
             logger.info("No solve this cycle (%d centroids)", len(centroids))
+            # Real captures only - simulator/synthetic frames aren't field evidence.
+            if failed_frames is not None and mode == Mode.REAL:
+                failed_frames.maybe_save(image, len(centroids))
         else:
             location = location_store.current()
             when_utc = dt.datetime.now(dt.timezone.utc)
@@ -117,6 +122,7 @@ def main() -> None:
     auto_exposure = AutoExposureController(
         config.auto_exposure, config.camera.exposure_ms, config.camera.gain
     )
+    failed_frames = FailedFrameRecorder(config.failed_frames)
     real_detect = DetectClient(config.cedar_detect.address, config.solver.sigma)
     real_solver = Solver(config.solver)
     fake_camera = FakeCamera()
@@ -156,7 +162,8 @@ def main() -> None:
 
     try:
         _solve_loop(
-            config, pipelines, location_store, mode_store, latest_fix, stop_event, auto_exposure
+            config, pipelines, location_store, mode_store, latest_fix, stop_event, auto_exposure,
+            failed_frames,
         )
     finally:
         encoder_server.shutdown()
