@@ -11,42 +11,66 @@ import threading
 import time
 
 from binoc_solve.astro import radec_to_altaz
+from binoc_solve.auto_exposure import AutoExposureController
 from binoc_solve.camera import Camera
 from binoc_solve.config import Config
 from binoc_solve.detect_client import DetectClient
 from binoc_solve.encoder_server import EncoderTCPServer
+from binoc_solve.fakes import FakeCamera, FakeDetectClient, SlewingFakeSolver
 from binoc_solve.location_selector import LocationSelector
 from binoc_solve.locations import LocationStore
+from binoc_solve.pipeline_mode import Mode, ModeStore
+from binoc_solve.simulator_selector import SimulatorSelector
 from binoc_solve.solver import Solver
 from binoc_solve.state import LatestFix
+from binoc_solve.synthetic_camera import SyntheticImageCamera
 
 logger = logging.getLogger(__name__)
+
+# camera, detect, solver - duck-typed the same way across the real
+# pipeline and both fakes, so any (Camera|FakeCamera|SyntheticImageCamera,
+# DetectClient|FakeDetectClient, Solver|FakeSolver|SlewingFakeSolver)
+# triple works here.
+Pipeline = tuple[object, object, object]
 
 
 def _solve_loop(
     config: Config,
-    camera: Camera,
-    detect: DetectClient,
-    solver: Solver,
+    pipelines: dict[Mode, Pipeline],
     location_store: LocationStore,
+    mode_store: ModeStore,
     latest_fix: LatestFix,
     stop_event: threading.Event,
+    auto_exposure: AutoExposureController | None = None,
 ) -> None:
     image_size = (config.camera.height, config.camera.width)
 
     while not stop_event.is_set():
         cycle_start = time.monotonic()
 
+        # Re-read every cycle, same reasoning as location_store.current()
+        # below: a button press mid-session should take effect on the
+        # very next cycle, not just at startup.
+        mode = mode_store.current()
+        camera, detect, solver = pipelines[mode]
+
         image = camera.capture_gray()
-        centroids = detect.extract_centroids(image)
+        detection = detect.extract_centroids(image)
+        centroids = detection.centroids
         logger.debug("Captured frame, %d star centroids", len(centroids))
+
+        # Only the real camera's own captures say anything about real sky
+        # brightness - the simulator/synthetic modes' images aren't fed
+        # back into exposure control.
+        if auto_exposure is not None and mode == Mode.REAL:
+            new_settings = auto_exposure.observe(len(centroids), detection.peak_star_pixel)
+            if new_settings is not None:
+                camera.set_exposure(new_settings.exposure_ms, new_settings.gain)
 
         result = solver.solve(centroids, image_size)
         if result is None:
             logger.info("No solve this cycle (%d centroids)", len(centroids))
         else:
-            # Re-read every cycle so a button press mid-session takes effect
-            # on the very next solve, not just at startup.
             location = location_store.current()
             when_utc = dt.datetime.now(dt.timezone.utc)
             alt_deg, az_deg = radec_to_altaz(
@@ -58,9 +82,10 @@ def _solve_loop(
                 when_utc,
             )
             latest_fix.update(alt_deg=alt_deg, az_deg=az_deg)
+            tag = f" [{mode.value.upper()}]" if mode != Mode.REAL else ""
             logger.info(
-                "Solved (%s): RA=%.3f Dec=%.3f (%d matches) -> Alt=%.2f Az=%.2f",
-                location.name, result.ra_deg, result.dec_deg, result.num_matches, alt_deg, az_deg,
+                "Solved%s (%s): RA=%.3f Dec=%.3f (%d matches) -> Alt=%.2f Az=%.2f",
+                tag, location.name, result.ra_deg, result.dec_deg, result.num_matches, alt_deg, az_deg,
             )
 
         elapsed = time.monotonic() - cycle_start
@@ -85,10 +110,32 @@ def main() -> None:
     location_store = LocationStore(config.locations, config.location_selector.state_file)
     location_selector = LocationSelector(config.location_selector, location_store)
 
-    camera = Camera(config.camera)
-    detect = DetectClient(config.cedar_detect.address, config.solver.sigma)
-    solver = Solver(config.solver)
+    mode_store = ModeStore()
+    simulator_selector = SimulatorSelector(config.simulator_selector, mode_store)
+
+    real_camera = Camera(config.camera)
+    auto_exposure = AutoExposureController(
+        config.auto_exposure, config.camera.exposure_ms, config.camera.gain
+    )
+    real_detect = DetectClient(config.cedar_detect.address, config.solver.sigma)
+    real_solver = Solver(config.solver)
+    fake_camera = FakeCamera()
+    fake_detect = FakeDetectClient()
+    fake_solver = SlewingFakeSolver()
+    synthetic_camera = SyntheticImageCamera(
+        config.synthetic_camera.image_dir, config.synthetic_camera.interval_s
+    )
     latest_fix = LatestFix()
+
+    pipelines: dict[Mode, Pipeline] = {
+        Mode.REAL: (real_camera, real_detect, real_solver),
+        Mode.SIMULATOR: (fake_camera, fake_detect, fake_solver),
+        # Reuses the real detect/solver (not fakes) - the point of this
+        # mode is a genuine solve, just against a pre-rendered image
+        # instead of a live capture. Also avoids loading a second copy of
+        # the Tetra3 star database.
+        Mode.SYNTHETIC: (synthetic_camera, real_detect, real_solver),
+    }
 
     encoder_server = EncoderTCPServer(config.encoder, latest_fix, config.loop.stale_fix_warn_s)
     server_thread = threading.Thread(target=encoder_server.serve_forever, daemon=True)
@@ -108,12 +155,15 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
 
     try:
-        _solve_loop(config, camera, detect, solver, location_store, latest_fix, stop_event)
+        _solve_loop(
+            config, pipelines, location_store, mode_store, latest_fix, stop_event, auto_exposure
+        )
     finally:
         encoder_server.shutdown()
         encoder_server.server_close()
-        camera.close()
+        real_camera.close()
         location_selector.close()
+        simulator_selector.close()
 
 
 if __name__ == "__main__":

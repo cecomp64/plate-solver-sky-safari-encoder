@@ -11,7 +11,11 @@ This replaces an earlier IMU-based version of the same idea
 ([`esp32_push_to`](../esp32_push_to)), which measured *relative*
 orientation with an MPU-9250 and needed SkySafari's 2-star align to map
 that onto the sky. A plate solver instead gets an *absolute* fix from the
-stars themselves every cycle - no alignment step, no drift.
+stars themselves every cycle - no drift, and only a single 1-star sync
+per session rather than a 2-star align (see "Configure SkySafari" in
+[SETUP.md](SETUP.md) - SkySafari's Sky Commander/Basic Encoder System
+protocol turns out to still need one sync to learn its tick-to-sky
+offset, even though every report we send is already an absolute fix).
 
 ## How it works
 
@@ -39,6 +43,7 @@ same 36000 steps/rev.
 | microSD card | 16GB+ |
 | USB-C power bank | Sized for a night's session; the Pi 5 has no built-in battery. |
 | Momentary pushbutton | Cycles between your configured observing locations. No extra LED needed - it reuses the Pi's built-in power LED as the indicator. See [SETUP.md](SETUP.md) for wiring. |
+| Second momentary pushbutton | Toggles the solve loop between the real camera/cedar-detect/cedar-solve pipeline and a canned solver, for demoing/testing the SkySafari integration without pointing at open sky. Uses the Pi's ACT LED as the indicator (distinct from the location button's power LED). See [SETUP.md](SETUP.md) for wiring. |
 
 Not used in v1 (per current scope): GPS module, on-device display, the
 Arduino Mega/Uno/Nano boards (they're 8-bit AVR MCUs - can't run this
@@ -119,6 +124,12 @@ services, Wi-Fi AP, SkySafari configuration).
     synthetic test image generator.
   - `fakes.py` - drop-in fake camera/detect/solver for testing the
     SkySafari link without hardware (see `scripts/simulate_skysafari.py`).
+  - `synthetic_camera.py` - a camera stand-in that walks `test_images/`
+    on a timer, feeding the *real* cedar-detect/cedar-solve pipeline
+    instead of a live capture.
+  - `pipeline_mode.py`, `simulator_selector.py` - the second button/LED
+    (activity LED as the indicator) that cycles the solve loop through
+    real / simulator (`fakes.py`) / synthetic (`synthetic_camera.py`).
   - `main.py` - wires it all together; the solve loop + entrypoint.
 - `scripts/`:
   - `solve_once.py` - single-shot capture+solve+print from the real

@@ -43,44 +43,61 @@ sudo apt install -y \
   build-essential libopenblas-dev git protobuf-compiler curl
 ```
 
-## 4. Wire the location-select button, and free up the power LED
+## 4. Wire the two buttons, and free up the power/activity LEDs
 
-Only a button needs wiring - the location indicator reuses the Pi's
-built-in power LED instead of a separate one:
+Two buttons need wiring - their indicators reuse the Pi's built-in power
+(`PWR`) and activity (`ACT`) LEDs instead of separate ones:
 
-- **Button**: one leg to GPIO17 (BCM numbering, matching
+- **Location button**: one leg to GPIO17 (BCM numbering, matching
   `config.example.yaml`'s `location_selector.button_gpio: 17` - change
   both if you use a different pin), the other leg to any GND pin.
-  `gpiozero`'s `Button` uses an internal pull-up by default, so no
-  external resistor is needed.
+- **Simulator button**: one leg to GPIO27 (matching
+  `simulator_selector.button_gpio: 27`), the other leg to any GND pin.
+  Cycles the solve loop through three data sources
+  (`binoc_solve/pipeline_mode.py`): the real camera/cedar-detect/cedar-
+  solve pipeline; a smoothly slewing canned position
+  (`binoc_solve/fakes.py`); and the real cedar-detect/cedar-solve
+  pipeline fed pre-rendered test images from `test_images/` instead of a
+  live capture, walking to the next one every couple of seconds
+  (`binoc_solve/synthetic_camera.py`). All three let you demo/test the
+  SkySafari integration without pointing at open sky - see
+  `scripts/simulate_skysafari.py`'s docstring for a similar idea run
+  standalone off-Pi.
 
-Quick bench test before wiring it into the enclosure:
+`gpiozero`'s `Button` uses an internal pull-up by default, so no external
+resistor is needed for either.
+
+Quick bench test before wiring them into the enclosure:
 
 ```
 python3 -c "
 from gpiozero import Button
 from signal import pause
-btn = Button(17)
-btn.when_pressed = lambda: print('pressed')
+btn17 = Button(17)
+btn27 = Button(27)
+btn17.when_pressed = lambda: print('location button pressed')
+btn27.when_pressed = lambda: print('simulator button pressed')
 pause()
 "
 ```
 
-Press the button - you should see "pressed" printed. Ctrl-C to exit.
+Press each button - you should see its line printed. Ctrl-C to exit.
 
 Check which sysfs LED entries exist on your Pi (the red power LED is
-commonly named `PWR`, but this varies by board/OS version):
+commonly named `PWR`, the green activity LED `ACT`, but this varies by
+board/OS version):
 
 ```
 ls /sys/class/leds/
 ```
 
-If nothing there contains "PWR", update `location_selector.led_name` in
-`config.yaml` (step 9) to whichever name looks right (e.g. `led1`) once
-you get there.
+If nothing there contains "PWR"/"ACT", update `location_selector.led_name`/
+`simulator_selector.led_name` in `config.yaml` (step 9) to whichever
+names look right (e.g. `led0`/`led1`) once you get there.
 
-Controlling it needs write access to that LED's sysfs files, which
-aren't writable by a normal user by default. Add a udev rule once:
+Controlling either needs write access to its LED's sysfs files, which
+aren't writable by a normal user by default. Add a udev rule once, for
+all LEDs:
 
 ```
 sudo tee /etc/udev/rules.d/99-status-led.rules <<'EOF'
@@ -95,8 +112,9 @@ already present at boot; `udevadm trigger` alone doesn't always re-fire
 for them.)
 
 Note: while `binoc-solve.service` is running, the power LED shows the
-active-location pattern instead of its normal "power is good" status -
-it's restored automatically when the service stops cleanly.
+active-location pattern and the activity LED shows the real/simulated
+pipeline state, instead of their normal statuses - both are restored
+automatically when the service stops cleanly.
 
 ## 5. Clone the repos
 
@@ -224,6 +242,35 @@ If any say "No solve", double check `solver.database_path` in
 and that `cedar-detect-server` is running (see step 12 below for
 starting it manually).
 
+All six built-in fields now solve correctly (verified RA/Dec matches
+each field's printed ground truth to a fraction of a degree). Getting
+here took finding two unrelated bugs, both now fixed - worth knowing
+about since they'd otherwise have silently broken *real* solves too,
+not just these synthetic ones:
+
+- `synthetic_sky.py`'s `radec_to_pixel()` had RA increasing rightward
+  in the rendered image instead of leftward (the correct convention
+  for a camera looking *out* at the sky, as opposed to a star chart
+  drawn looking *at* the celestial sphere from outside). Every
+  geometry/round-trip test here passed anyway, because mirroring
+  preserves all pairwise distances - the kind of check those tests
+  do - so this was only caught by a real `solve_from_centroids()` call
+  failing on every field, at every tolerance, against both the bundled
+  and a custom database, before being isolated to this one sign.
+- `solver.py` compared cedar-solve's returned `status` (an int) against
+  the string `"MATCH_FOUND"`, which is never equal to anything cedar-
+  solve actually returns - so a real successful solve was
+  indistinguishable from a failed one. This one's the more serious
+  bug: it would have affected genuine night-sky solves too, not just
+  this synthetic-image check.
+
+`smc` and `magellanic-clouds` need `solver.sigma` lowered to 6 or below
+to solve (their whole premise is being deliberately star-sparse - see
+`FIELD_PRESETS` in `synthetic_sky.py` - so `sigma: 8.0`'s default
+finds too few of their fainter stars). This isn't a bug; it's the same
+"too few stars -> lower sigma/raise exposure" tradeoff step 10's link
+to `scripts/solve_once.py` already describes for a real capture.
+
 ## 12. Sanity-check the pipeline with a real capture (before touching SkySafari)
 
 In one terminal:
@@ -245,6 +292,16 @@ check focus/lens cap. If stars are detected but it doesn't solve and step
 capture (focus, exposure, or a genuinely cloudy/obstructed view) rather
 than the solver setup itself.
 
+Once this baseline works, `camera.exposure_ms`/`gain` only need to be a
+reasonable starting guess, not exact: the `auto_exposure` section in
+`config.yaml` nudges them at runtime (based on cedar-detect's centroid
+count and peak pixel value each cycle) if real field conditions turn out
+brighter or dimmer than tonight's tuning - there's no laptop in the
+field to redo this step. Set `auto_exposure.enabled: false` to pin the
+configured values exactly instead. On an untracked mount, keep
+`auto_exposure.max_exposure_ms` comfortably under 2s so stars don't
+trail into streaks cedar-detect can't centroid.
+
 ## 13. Run as services
 
 ```
@@ -256,11 +313,20 @@ systemctl --user enable --now cedar-detect.service binoc-solve.service
 journalctl --user -u binoc-solve -f   # watch it solve in real time
 ```
 
-On startup, and after every button press, the LED blinks the 1-indexed
-position of the active location in `config.yaml`'s `locations:` list
-(location 1 = one blink, location 2 = two blinks, twice, pausing between
-repeats). The selection is saved to `state/active_location.txt` and
-survives a power cycle - it only changes when you press the button.
+On startup, and after every location-button press, the power LED blinks
+the 1-indexed position of the active location in `config.yaml`'s
+`locations:` list (location 1 = one blink, location 2 = two blinks,
+twice, pausing between repeats). The selection is saved to
+`state/active_location.txt` and survives a power cycle - it only
+changes when you press the button.
+
+On startup, and after every simulator-button press, the activity LED
+blinks 1 (real pipeline), 2 (simulator), or 3 (synthetic - walking
+`test_images/`) to confirm the new state. Unlike the location
+selection, this always starts real on boot - a forgotten press can't
+silently leave the field session on fake/synthetic positions after a
+power cycle. While not on the real pipeline, solved-fix log lines are
+tagged `[SIMULATED]` or `[SYNTHETIC]`.
 
 ## 14. Wi-Fi access point (field use, no router needed)
 
@@ -393,13 +459,34 @@ Caveats:
 | Set Time & Location | Disabled |
 
 Connect your phone to `Binocular_Nav`, tap Connect in SkySafari - the
-crosshair should already be near the true sky position (no 2-star align
-needed, since the device reports true Alt/Az from the plate solve). A
-1-star Sync corrects for any fixed mechanical offset between the camera
-and the binoculars' true boresight, same as you'd do with a normal DSC.
+crosshair will move correctly (it tracks true Alt/Az from the plate
+solve every cycle) but will likely **not** be near the true sky
+position yet: SkySafari's Sky Commander/Basic Encoder System protocol
+treats raw encoder ticks as relative to an arbitrary zero-point until
+you sync, so without one it's faithfully relaying our correct relative
+motion anchored to the wrong absolute spot (confirmed empirically -
+this is not just theoretical mechanical-offset correction).
+
+Fix it with a **1-star Sync**: pick a bright, identifiable object (or
+just use whatever the crosshair happens to be circling if you're
+testing with the simulator button), select it in SkySafari, and choose
+Align/Sync Scope Here. This teaches SkySafari the tick-to-sky offset for
+the rest of the session - after that one sync, the crosshair should
+track the true sky position continuously, since every report we send is
+already an absolute fix, not a relative one (no need to re-sync as you
+move around, only once per SkySafari session/reconnect). A 1-star Sync
+also still doubles as the correction for any fixed mechanical offset
+between the camera and the binoculars' true boresight, same as it would
+on a normal DSC.
 
 ## Troubleshooting
 
+- **Crosshair moves correctly (e.g. circles smoothly with the simulator
+  on) but lands nowhere near the right part of the sky, even with
+  location/clock both confirmed correct**: you haven't synced yet this
+  session - see the 1-star Sync step above. This looks alarming (can be
+  tens of degrees off in both RA and Dec) but is expected before the
+  first sync.
 - **Crosshair reversed on one axis**: set `flip_azimuth`/`flip_altitude:
   true` in `config.yaml`'s `encoder:` section and restart
   `binoc-solve.service`.
@@ -410,21 +497,40 @@ and the binoculars' true boresight, same as you'd do with a normal DSC.
 - **Solves are rare/slow**: confirm `solver.database_path` isn't still
   `null` (step 10 - required at this camera's ~53.5deg FOV, not just an
   optimization); also check `scripts/solve_once.py`'s star count - too
-  few stars usually means exposure/focus, not solver tuning.
+  few stars usually means exposure/focus, not solver tuning. After a
+  field session with no solves, `journalctl --user -u binoc-solve` will
+  show `Auto-exposure: ...` lines if it was hunting for a working
+  exposure all night (e.g. pinned at `max_exposure_ms` and still
+  starved) - that points at focus, clouds, or `auto_exposure` bounds too
+  narrow for the night's sky, not a config typo.
 - **Positions are off by a consistent amount at a given site**: check
   that the active location's LED blink count actually matches the site
   you're at (easy to forget a press after moving locations), and that
   its lat/lon in `config.yaml` is correct.
 - **Button press doesn't do anything**: check `journalctl --user -u
-  binoc-solve -f` for "Location selector ready" at startup - if that
-  line is missing, the service failed to claim the button's GPIO pin
-  (check wiring/pin number match `config.yaml`, and that nothing else on
-  the system is using GPIO17) or the power LED (see below).
+  binoc-solve -f` for "Location selector ready" / "Simulator selector
+  ready" at startup - if a line is missing, the service failed to claim
+  that button's GPIO pin (check wiring/pin number match `config.yaml`,
+  and that nothing else on the system is using GPIO17/GPIO27) or its LED
+  (see below).
 - **Service fails to start with a permission error on `/sys/class/leds/...`**:
   the udev rule from step 4 either wasn't applied or hasn't taken effect
   yet - confirm `/etc/udev/rules.d/99-status-led.rules` exists and
   reboot. The error message names the exact file it couldn't write.
-- **No LED under `/sys/class/leds/` matches "PWR"**: run `ls
-  /sys/class/leds/` and set `location_selector.led_name` in
-  `config.yaml` to whatever's actually there (the startup error also
-  lists the available names).
+- **No LED under `/sys/class/leds/` matches "PWR"/"ACT"**: run `ls
+  /sys/class/leds/` and set `location_selector.led_name`/
+  `simulator_selector.led_name` in `config.yaml` to whatever's actually
+  there (the startup error also lists the available names).
+- **Positions look plausible but suspiciously fixed to a handful of
+  bright stars, or the field never seems to change**: the simulator
+  button was likely pressed by accident, landing on simulator or
+  synthetic mode - check for `[SIMULATED]`/`[SYNTHETIC]` in `journalctl
+  --user -u binoc-solve -f` and press the button (1-3 times) to cycle
+  back to the real pipeline.
+- **Synthetic mode logs "No solve this cycle" for every image in
+  `test_images/`**: expected for `synthetic_smc.png`/
+  `synthetic_magellanic-clouds.png` at the default `sigma: 8.0` - see
+  step 11, lower it to 6 or below. For any other field, confirm with
+  `scripts/solve_image.py test_images/synthetic_orion.png` directly
+  (bypassing the button/service) before assuming something else is
+  wrong.

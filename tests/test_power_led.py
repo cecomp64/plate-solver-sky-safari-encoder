@@ -2,7 +2,7 @@ import stat
 
 import pytest
 
-from binoc_solve.power_led import PowerLed
+from binoc_solve.power_led import PowerLed, blink_pattern
 
 
 def _make_fake_led(leds_root, name, trigger_options, active):
@@ -71,3 +71,15 @@ def test_prefers_first_match_when_multiple_leds_match(tmp_path):
     _make_fake_led(tmp_path, "PWR2", ["none", "default-on"], "none")
     led = PowerLed(name_substring="PWR", leds_root=tmp_path)
     assert led._path.name == "PWR"  # sorted first alphabetically
+
+
+def test_blink_pattern_calls_on_off_in_sequence(tmp_path):
+    _make_fake_led(tmp_path, "PWR", ["none", "default-on"], "none")
+    led = PowerLed(name_substring="PWR", leds_root=tmp_path)
+
+    calls = []
+    led.on = lambda: calls.append("on")
+    led.off = lambda: calls.append("off")
+
+    blink_pattern(led, count=2, on_s=0, off_s=0, repeat_pause_s=0, repeats=2)
+    assert calls == ["on", "off", "on", "off", "on", "off", "on", "off"]

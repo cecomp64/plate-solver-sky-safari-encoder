@@ -45,15 +45,88 @@ location_selector:
   blink_repeat_pause_s: 0.8
   blink_repeats: 2
 
+simulator_selector:
+  # A second button that cycles the solve loop through three data
+  # sources (binoc_solve/pipeline_mode.py): the real camera/cedar-detect/
+  # cedar-solve pipeline, a smoothly slewing canned position
+  # (binoc_solve/fakes.py - no pointing at open sky needed), and the
+  # real cedar-detect/cedar-solve pipeline fed pre-rendered test images
+  # from synthetic_camera.image_dir below instead of a live capture
+  # (binoc_solve/synthetic_camera.py - a genuine solve against known
+  # ground truth, still no open sky needed). Wired the same way as
+  # location_selector's button (one leg to this pin, other leg to GND),
+  # but to a different pin. Always starts on the real pipeline at boot -
+  # unlike the location selection, this is not persisted, so a forgotten
+  # press can't silently serve fake/synthetic positions after a power
+  # cycle in the field.
+  button_gpio: 27
+  # The Pi's ACT (activity) LED, distinct from location_selector's PWR
+  # LED so both indicators are visible at once. Same case-insensitive
+  # substring match against /sys/class/leds/* - run `ls /sys/class/leds/`
+  # to see what's on your board if "ACT" doesn't match.
+  led_name: "ACT"
+  bounce_time_s: 0.05
+  # Blink timing: 1 blink = real pipeline, 2 blinks = simulator, 3
+  # blinks = synthetic, each blink_repeats times over.
+  blink_on_s: 0.15
+  blink_off_s: 0.15
+  blink_repeat_pause_s: 0.8
+  blink_repeats: 2
+
 camera:
-  # Exposure/gain for a long, unattended night-sky still. Start here and
-  # adjust based on scripts/solve_once.py's star-count output: too few
-  # stars -> raise exposure_ms or gain; blown-out/trailed stars -> lower
-  # exposure_ms.
-  exposure_ms: 2000
+  # Exposure/gain starting point for a long, unattended night-sky still.
+  # Tune this by hand once, based on scripts/solve_once.py's star-count
+  # output (too few stars -> raise exposure_ms or gain; blown-out/trailed
+  # stars -> lower exposure_ms) - auto_exposure below then nudges these
+  # at runtime if real field conditions (moon, haze, light pollution)
+  # turn out different from tonight's tuning, so this doesn't have to be
+  # exactly right, just a reasonable starting guess.
+  exposure_ms: 1200
   gain: 8.0
   width: 2592
   height: 1944
+
+auto_exposure:
+  # Closed-loop exposure/gain control: there's no laptop in the field to
+  # re-run scripts/solve_once.py if camera.exposure_ms/gain above turn
+  # out wrong for the night's actual sky, so this nudges them at runtime
+  # using cedar-detect's own centroid count and peak pixel value each
+  # cycle instead. Set to false to pin camera.exposure_ms/gain exactly as
+  # configured (the old behavior).
+  enabled: true
+  # IMPORTANT for an untracked mount: keep max_exposure_ms comfortably
+  # under the point where stars start trailing into streaks cedar-detect
+  # can't centroid - well under 2s on most undriven mounts.
+  min_exposure_ms: 200
+  max_exposure_ms: 1500
+  min_gain: 1.0
+  max_gain: 16.0
+  # Fewer than this many centroids for low_streak consecutive cycles ->
+  # raise exposure (then gain, once exposure is already at max_exposure_ms).
+  min_centroids: 15
+  low_streak: 3
+  # A centroid this bright (0-255) for high_streak consecutive cycles
+  # means blown-out/saturated stars -> lower exposure (then gain, once
+  # exposure is already at min_exposure_ms).
+  saturation_peak: 250
+  high_streak: 2
+  # Multiplicative step per adjustment (e.g. 1.4 = +/-40% each time).
+  adjustment_factor: 1.4
+  # Cycles to wait after any adjustment before evaluating again, so one
+  # change has time to show up in a fresh capture before another stacks
+  # on top of it.
+  cooldown_cycles: 2
+
+synthetic_camera:
+  # Pre-rendered test images (scripts/generate_test_image.py) that the
+  # simulator_selector button's SYNTHETIC mode walks through, one every
+  # interval_s, feeding each through the *real* cedar-detect/cedar-solve
+  # pipeline - unlike the SIMULATOR mode above, this exercises genuine
+  # star detection/solving against known ground truth, without a live
+  # camera capture. Relative paths resolve from the working directory
+  # binoc-solve.service runs from (see systemd/binoc-solve.service).
+  image_dir: "test_images"
+  interval_s: 1.5
 
 solver:
   # IMPORTANT: cedar-solve's bundled default_database only covers 10-30deg

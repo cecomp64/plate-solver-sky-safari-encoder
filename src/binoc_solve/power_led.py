@@ -16,6 +16,7 @@ shutdown gives that back.
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -79,3 +80,26 @@ class PowerLed:
 
     def close(self) -> None:
         self._write(self._trigger_path, self._original_trigger)
+
+
+def blink_pattern(
+    led: PowerLed,
+    count: int,
+    *,
+    on_s: float,
+    off_s: float,
+    repeat_pause_s: float,
+    repeats: int,
+) -> None:
+    """Blinks `led` `count` times, `repeats` times over, pausing
+    `repeat_pause_s` between repeats - e.g. count=2, repeats=2 blinks
+    "on-off on-off, pause, on-off on-off, pause". Shared by
+    location_selector.py and simulator_selector.py so both indicators
+    blink identically."""
+    for _ in range(repeats):
+        for _ in range(count):
+            led.on()
+            time.sleep(on_s)
+            led.off()
+            time.sleep(off_s)
+        time.sleep(repeat_pause_s)

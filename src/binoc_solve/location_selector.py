@@ -13,11 +13,10 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 
 from binoc_solve.config import LocationSelectorConfig
 from binoc_solve.locations import LocationStore, blink_count_for_index
-from binoc_solve.power_led import PowerLed
+from binoc_solve.power_led import PowerLed, blink_pattern
 
 logger = logging.getLogger(__name__)
 
@@ -50,13 +49,13 @@ class LocationSelector:
         logger.info("Button pressed -> now using %s", location.name)
 
     def _blink(self, count: int) -> None:
-        for _ in range(self._config.blink_repeats):
-            for _ in range(count):
-                self._led.on()
-                time.sleep(self._config.blink_on_s)
-                self._led.off()
-                time.sleep(self._config.blink_off_s)
-            time.sleep(self._config.blink_repeat_pause_s)
+        blink_pattern(
+            self._led, count,
+            on_s=self._config.blink_on_s,
+            off_s=self._config.blink_off_s,
+            repeat_pause_s=self._config.blink_repeat_pause_s,
+            repeats=self._config.blink_repeats,
+        )
 
     def close(self) -> None:
         self._button.close()

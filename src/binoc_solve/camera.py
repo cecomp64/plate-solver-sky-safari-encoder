@@ -38,6 +38,18 @@ class Camera:
             config.width, config.height, config.exposure_ms, config.gain,
         )
 
+    def set_exposure(self, exposure_ms: int, gain: float) -> None:
+        """Adjusts exposure/gain on the already-running camera - no
+        stop/reconfigure needed, libcamera picks these up on the next
+        capture. Used by auto_exposure.AutoExposureController to correct
+        for real sky conditions the config.yaml starting point didn't
+        anticipate."""
+        self._picam2.set_controls({
+            "ExposureTime": exposure_ms * 1000,  # us
+            "AnalogueGain": gain,
+        })
+        logger.info("Camera exposure adjusted: exposure=%sms, gain=%s", exposure_ms, gain)
+
     def capture_gray(self) -> np.ndarray:
         """Captures one frame and returns an (height, width) uint8 array."""
         # YUV420's Y-plane is a plain grayscale image at full resolution -

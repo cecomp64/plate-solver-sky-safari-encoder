@@ -40,8 +40,12 @@ def main() -> int:
     print(f"Loaded {args.image}: {image.shape[1]}x{image.shape[0]}")
 
     print("Extracting centroids via cedar-detect...")
-    centroids = detect.extract_centroids(image)
-    print(f"Found {len(centroids)} star candidates.")
+    detection = detect.extract_centroids(image)
+    centroids = detection.centroids
+    print(
+        f"Found {len(centroids)} star candidates "
+        f"(peak={detection.peak_star_pixel}, noise={detection.noise_estimate:.2f})."
+    )
     if not centroids:
         print("No stars detected.")
         return 1

@@ -39,6 +39,22 @@ def test_horizontal_fov_matches_computed_camera_spec():
     assert horizontal_fov_deg() == pytest.approx(53.5, abs=0.1)
 
 
+def test_increasing_ra_moves_left_not_right():
+    # The handedness that matters and that pure-distance checks (e.g.
+    # test_radial_distance_matches_astropy_angular_separation below)
+    # can't catch, since mirroring preserves all pairwise distances -
+    # this exact bug (RA increasing rightward instead of leftward)
+    # passed every geometry/round-trip test here while making every
+    # real tetra3.solve_from_centroids() call fail, for any field,
+    # every time. A camera looking out at the sky (not a chart drawn
+    # looking at the sphere from outside) has RA increasing leftward -
+    # see radec_to_pixel's docstring.
+    ra0, dec0 = 83.75, -1.5
+    x_center, _ = radec_to_pixel(ra0, dec0, ra0, dec0, SENSOR_WIDTH_PX, SENSOR_HEIGHT_PX, FOCAL_LENGTH_PX)
+    x_higher_ra, _ = radec_to_pixel(ra0 + 1.0, dec0, ra0, dec0, SENSOR_WIDTH_PX, SENSOR_HEIGHT_PX, FOCAL_LENGTH_PX)
+    assert x_higher_ra < x_center
+
+
 @pytest.mark.parametrize(
     "ra0,dec0,d_ra,d_dec",
     [
