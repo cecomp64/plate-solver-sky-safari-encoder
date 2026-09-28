@@ -284,6 +284,101 @@ server, so whatever time it has when you leave is what it solves with
 for the rest of the session (a few seconds of drift over one night is
 fine; get it right before you leave, not after).
 
+### Optional: join home Wi-Fi at the same time as running the AP
+
+The Pi 5's Wi-Fi chip can run the AP and join another network at once,
+so you can SSH in over your home Wi-Fi while `Binocular_Nav` stays up.
+The AP moves to a virtual interface (`uap0`) and `wlan0` is left free to
+join home Wi-Fi. The chip has a single radio, so **both must be on the
+same channel** - that's why both are pinned to 2.4 GHz below, and why
+the AP gets restarted on the home network's channel whenever `wlan0`
+connects.
+
+Have a keyboard/monitor or Ethernet handy in case a Wi-Fi change drops
+your SSH session.
+
+1. Check the chip supports it:
+
+   ```
+   iw list | grep -A4 "valid interface combinations"
+   ```
+
+   Expect something like `#{ managed } <= 1, #{ AP } <= 1, total <= 2,
+   #channels <= 1` (`#channels <= 1` is the same-channel rule).
+
+2. Make sure a home Wi-Fi profile exists on `wlan0` (`nmcli connection
+   show` - the imager usually names it `preconfigured`). If it's missing:
+
+   ```
+   sudo nmcli connection add type wifi ifname wlan0 con-name preconfigured \
+     ssid "YourHomeSSID" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "YourPassword"
+   ```
+
+   Then pin it to 2.4 GHz to match the AP's `band bg`:
+
+   ```
+   sudo nmcli connection modify preconfigured 802-11-wireless.band bg
+   ```
+
+3. Create `uap0` at every boot:
+
+   ```
+   sudo tee /etc/udev/rules.d/90-uap0.rules >/dev/null <<'EOF'
+   ACTION=="add", SUBSYSTEM=="ieee80211", KERNEL=="phy0", RUN+="/usr/sbin/iw phy %k interface add uap0 type __ap"
+   EOF
+   ```
+
+4. Move the AP to `uap0`. It has to come off `wlan0` first - the chip
+   allows only one AP, so creating `uap0` while `BinocularAP` is still
+   up on `wlan0` fails with `Device or resource busy (-16)`. Taking it
+   down drops anyone connected through it, so don't do this over the
+   AP. SSID, password, `192.168.4.1/24` and shared IPv4 are unchanged,
+   so the SkySafari profile in step 15 still works:
+
+   ```
+   sudo nmcli connection down BinocularAP
+   sudo nmcli connection modify BinocularAP connection.interface-name uap0
+   sudo iw dev wlan0 interface add uap0 type __ap
+   sudo nmcli connection up BinocularAP
+   ```
+
+5. Restart the AP whenever `wlan0` joins a network, so it follows the
+   home network's channel. NetworkManager only runs dispatcher scripts
+   that are root-owned and not group/world-writable:
+
+   ```
+   sudo tee /etc/NetworkManager/dispatcher.d/90-restart-ap >/dev/null <<'EOF'
+   #!/bin/sh
+   [ "$1" = "wlan0" ] && [ "$2" = "up" ] && nmcli connection up BinocularAP
+   EOF
+   sudo chmod 755 /etc/NetworkManager/dispatcher.d/90-restart-ap
+   ```
+
+6. Reboot and check:
+
+   ```
+   nmcli device status   # wlan0 -> preconfigured, uap0 -> BinocularAP, both connected
+   iw dev                # both interfaces on the same channel
+   ```
+
+   At home, SSH in with `ssh <user>@<hostname>.local`; your phone can
+   still join `Binocular_Nav` and reach `192.168.4.1:4030`. In the field
+   `wlan0` finds nothing and the AP runs alone, as before. A side
+   benefit: the clock now syncs automatically whenever the Pi is in
+   range of home Wi-Fi.
+
+Caveats:
+
+- If your home network already uses `192.168.4.x`, change the AP's
+  subnet - two interfaces can't route the same range.
+- While `wlan0` is disconnected it keeps scanning for home Wi-Fi, and
+  each scan can briefly interrupt the AP. If SkySafari drops for a moment
+  now and then in the field, that's the likely cause; `sudo nmcli
+  connection modify preconfigured connection.autoconnect-retries 3`
+  makes it give up after a few tries.
+- If the AP won't start, give it its own MAC: `sudo nmcli connection
+  modify BinocularAP 802-11-wireless.cloned-mac-address stable`.
+
 ## 15. Configure SkySafari
 
 | Setting | Value |
