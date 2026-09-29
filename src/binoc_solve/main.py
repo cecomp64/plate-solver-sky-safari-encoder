@@ -8,11 +8,12 @@ import datetime as dt
 import logging
 import signal
 import threading
+import time
 
 from binoc_solve.astro import radec_to_altaz
 from binoc_solve.auto_exposure import AutoExposureController
 from binoc_solve.camera import Camera
-from binoc_solve.config import Config
+from binoc_solve.config import Config, SolverConfig
 from binoc_solve.detect_client import DetectClient
 from binoc_solve.encoder_server import EncoderTCPServer
 from binoc_solve.failed_frames import FailedFrameRecorder
@@ -45,14 +46,6 @@ def _solve_loop(
     auto_exposure: AutoExposureController | None = None,
     failed_frames: FailedFrameRecorder | None = None,
 ) -> None:
-    # Set while a solve is running, so a newer frame can supersede it.
-    active_solver: list[object | None] = [None]
-
-    def _supersede_active_solve() -> None:
-        solver = active_solver[0]
-        if solver is not None and hasattr(solver, "supersede"):  # the fakes don't
-            solver.supersede()
-
     def _current_camera() -> tuple[Mode, object]:
         # Re-read every capture, same reasoning as location_store.current()
         # below: a button press mid-session should take effect on the
@@ -60,34 +53,68 @@ def _solve_loop(
         mode = mode_store.current()
         return mode, pipelines[mode][0]
 
-    grabber = LatestFrameGrabber(
-        _current_camera, config.loop.min_interval_s, on_new_frame=_supersede_active_solve
-    )
+    grabber = LatestFrameGrabber(_current_camera, config.loop.min_interval_s)
     grabber.start()
     try:
         last_seq = 0
+        last_cut_short = False
         while not stop_event.is_set():
             frame = grabber.wait_for_frame(last_seq, timeout=0.5)
             if frame is None:
                 continue
             last_seq = frame.seq
-            _process_frame(
-                frame, pipelines, location_store, latest_fix, active_solver,
+            timeout_ms = _solve_budget_ms(
+                frame.captured_at, grabber.frame_interval_s, time.monotonic(), config.solver,
+                last_cut_short,
+            )
+            solved, solve_ms = _process_frame(
+                frame, timeout_ms, pipelines, location_store, latest_fix,
                 auto_exposure, failed_frames,
+            )
+            # Ran out its whole budget but that budget was the next-frame
+            # deadline, not the hard timeout - see _solve_budget_ms().
+            last_cut_short = (
+                not solved and timeout_ms < config.solver.solve_timeout_ms
+                and solve_ms >= 0.95 * timeout_ms
             )
     finally:
         grabber.stop()
 
 
+def _solve_budget_ms(
+    captured_at: float,
+    frame_interval_s: float | None,
+    now: float,
+    cfg: SolverConfig,
+    last_cut_short: bool = False,
+) -> float:
+    """How long to let this frame's solve run: until the next frame is due,
+    since a newer frame beats finishing an old one (after a slew, the old
+    one was likely exposed while moving). Never less than
+    supersede_after_ms, so slow but genuine solves on faint frames (seen
+    needing ~0.3-0.6s) survive a fast camera; never more than
+    solve_timeout_ms.
+
+    If the previous solve was cut off by that deadline, this one gets the
+    full solve_timeout_ms instead: otherwise a sky where every genuine
+    solve takes longer than a frame would never solve at all. At worst
+    that alternates cut-short and full-length solves."""
+    if frame_interval_s is None or last_cut_short:
+        return cfg.solve_timeout_ms
+    until_next_ms = (captured_at + frame_interval_s - now) * 1000
+    return min(cfg.solve_timeout_ms, max(cfg.supersede_after_ms, until_next_ms))
+
+
 def _process_frame(
     frame: Frame,
+    timeout_ms: float,
     pipelines: dict[Mode, Pipeline],
     location_store: LocationStore,
     latest_fix: LatestFix,
-    active_solver: list[object | None],
     auto_exposure: AutoExposureController | None,
     failed_frames: FailedFrameRecorder | None,
-) -> None:
+) -> tuple[bool, float]:
+    """Returns (solved, milliseconds the solve took)."""
     mode = frame.source
     camera, detect, solver = pipelines[mode]
     image = frame.image
@@ -105,13 +132,13 @@ def _process_frame(
         if new_settings is not None:
             camera.set_exposure(new_settings.exposure_ms, new_settings.gain)
 
-    active_solver[0] = solver
-    try:
-        result = solver.solve(centroids, image_size)
-    finally:
-        active_solver[0] = None
+    solve_start = time.monotonic()
+    result = solver.solve(centroids, image_size, timeout_ms=timeout_ms)
+    solve_ms = (time.monotonic() - solve_start) * 1000
     if result is None:
-        logger.info("No solve this cycle (%d centroids)", len(centroids))
+        logger.info(
+            "No solve this cycle (%d centroids, %.0f/%.0fms)", len(centroids), solve_ms, timeout_ms
+        )
         # Real captures only - simulator/synthetic frames aren't field evidence.
         if failed_frames is not None and mode == Mode.REAL:
             failed_frames.maybe_save(image, len(centroids))
@@ -129,9 +156,11 @@ def _process_frame(
         latest_fix.update(alt_deg=alt_deg, az_deg=az_deg)
         tag = f" [{mode.value.upper()}]" if mode != Mode.REAL else ""
         logger.info(
-            "Solved%s (%s): RA=%.3f Dec=%.3f (%d matches) -> Alt=%.2f Az=%.2f",
-            tag, location.name, result.ra_deg, result.dec_deg, result.num_matches, alt_deg, az_deg,
+            "Solved%s (%s): RA=%.3f Dec=%.3f (%d matches, %.0fms) -> Alt=%.2f Az=%.2f",
+            tag, location.name, result.ra_deg, result.dec_deg, result.num_matches, solve_ms,
+            alt_deg, az_deg,
         )
+    return result is not None, solve_ms
 
 
 def main() -> None:
@@ -148,6 +177,14 @@ def main() -> None:
     config = Config.load(args.config)
 
     location_store = LocationStore(config.locations, config.location_selector.state_file)
+    # astropy loads its time/Earth-orientation tables on the first
+    # conversion (~0.8s on the Pi) - do it now rather than delaying the
+    # first fix after every restart.
+    loc = location_store.current()
+    radec_to_altaz(
+        0.0, 0.0, loc.latitude_deg, loc.longitude_deg, loc.elevation_m,
+        dt.datetime.now(dt.timezone.utc),
+    )
     location_selector = LocationSelector(config.location_selector, location_store)
 
     mode_store = ModeStore()

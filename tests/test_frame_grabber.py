@@ -47,17 +47,17 @@ def test_slow_consumer_gets_newest_frame_not_a_backlog():
     assert newest.seq >= first.seq + 3
 
 
-def test_on_new_frame_fires_per_frame():
-    calls = []
-    grabber = LatestFrameGrabber(
-        lambda: ("real", _CountingCamera()), min_interval_s=0.01, on_new_frame=lambda: calls.append(1)
-    )
+def test_frame_interval_is_median_of_recent_gaps():
+    camera = _CountingCamera(delay_s=0.05)
+    grabber = LatestFrameGrabber(lambda: ("real", camera), min_interval_s=0.0)
+    assert grabber.frame_interval_s is None
     grabber.start()
     try:
-        grabber.wait_for_frame(3, timeout=2)
+        grabber.wait_for_frame(5, timeout=3)
+        interval = grabber.frame_interval_s
     finally:
         grabber.stop(timeout=2)
-    assert len(calls) >= 4
+    assert interval is not None and 0.04 < interval < 0.1
 
 
 def test_source_is_reread_each_capture():

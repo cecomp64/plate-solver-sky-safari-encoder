@@ -82,7 +82,12 @@ class FakeSolver:
         self._lock = threading.Lock()
         self._index = 0
 
-    def solve(self, centroids: list[tuple[float, float]], image_size: tuple[int, int]) -> SolveResult:
+    def solve(
+        self,
+        centroids: list[tuple[float, float]],
+        image_size: tuple[int, int],
+        timeout_ms: float | None = None,
+    ) -> SolveResult:
         with self._lock:
             solution = self._solutions[self._index]
         return SolveResult(
@@ -164,7 +169,12 @@ class SlewingFakeSolver:
         self._clock = clock
         self._start = clock()
 
-    def solve(self, centroids: list[tuple[float, float]], image_size: tuple[int, int]) -> SolveResult:
+    def solve(
+        self,
+        centroids: list[tuple[float, float]],
+        image_size: tuple[int, int],
+        timeout_ms: float | None = None,
+    ) -> SolveResult:
         elapsed = self._clock() - self._start
         phase = 2 * math.pi * (elapsed / self._period_s)
 

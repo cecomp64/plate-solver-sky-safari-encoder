@@ -5,14 +5,21 @@ slow or doomed solve (stars smeared mid-slew) delayed the next capture,
 and the first frame solved after the mount stopped could be one exposed
 while it was still moving. Capturing independently means the camera never
 waits on the solver, the solver always starts on the freshest frame, and
-on_new_frame lets a solve still grinding on an older frame be abandoned
-for it (see Solver.supersede()).
+frame_interval_s tells the solve loop when the next frame is due, so a
+solve still grinding on an older frame can be given up at that point.
+
+That deadline is enforced by the solver's own timeout rather than by this
+thread signalling "new frame": tetra3 holds the GIL for long stretches,
+and this thread was measured waking 0.1-0.25s late while a solve ran -
+usually after the 1s timeout had already expired anyway.
 """
 from __future__ import annotations
 
 import logging
+import statistics
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Callable
 
@@ -34,14 +41,16 @@ class LatestFrameGrabber:
         self,
         source: Callable[[], tuple[object, object]],
         min_interval_s: float,
-        on_new_frame: Callable[[], None] | None = None,
     ) -> None:
         """source() returns (tag, camera) and is re-read before every
         capture, so a mode switch takes effect on the very next frame.
         min_interval_s paces cameras that return instantly (the fakes)."""
         self._source = source
         self._min_interval_s = min_interval_s
-        self._on_new_frame = on_new_frame
+        # Recent capture-to-capture gaps. Median, not mean or min: a late
+        # wake-up (see module docstring) stretches one gap and shrinks the
+        # next as the queued frame is picked up straight away.
+        self._intervals: deque[float] = deque(maxlen=9)
         self._cond = threading.Condition()
         self._latest: Frame | None = None
         self._error: BaseException | None = None
@@ -58,6 +67,14 @@ class LatestFrameGrabber:
         with self._cond:
             self._cond.notify_all()
         self._thread.join(timeout)
+
+    @property
+    def frame_interval_s(self) -> float | None:
+        """Typical time between frames, or None until there's enough history."""
+        with self._cond:
+            if len(self._intervals) < 3:
+                return None
+            return statistics.median(self._intervals)
 
     def wait_for_frame(self, after_seq: int, timeout: float) -> Frame | None:
         """Newest frame with seq > after_seq, or None on timeout/stop.
@@ -78,6 +95,7 @@ class LatestFrameGrabber:
 
     def _run(self) -> None:
         seq = 0
+        last_at: float | None = None
         while not self._stop.is_set():
             start = time.monotonic()
             try:
@@ -90,11 +108,13 @@ class LatestFrameGrabber:
                     self._cond.notify_all()
                 return
             seq += 1
+            now = time.monotonic()
             with self._cond:
-                self._latest = Frame(seq=seq, source=tag, image=image, captured_at=time.monotonic())
+                if last_at is not None:
+                    self._intervals.append(now - last_at)
+                self._latest = Frame(seq=seq, source=tag, image=image, captured_at=now)
                 self._cond.notify_all()
-            if self._on_new_frame is not None:
-                self._on_new_frame()
+            last_at = now
             remaining = self._min_interval_s - (time.monotonic() - start)
             if remaining > 0:
                 self._stop.wait(remaining)

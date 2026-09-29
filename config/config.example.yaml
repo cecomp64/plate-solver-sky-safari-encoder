@@ -162,11 +162,10 @@ solver:
   # recovered those frames with no false solves on random star fields.
   match_max_error: 0.005
   # Frames are captured continuously in the background (frame_grabber.py),
-  # so a newer frame can arrive while a solve is still running. Such a
-  # solve is abandoned for the newer frame once it has run this long:
-  # smeared mid-slew frames stop wasting the whole solve_timeout_ms, so the
-  # first clean frame after the mount stops is solved right away. Kept
-  # above the ~0.3-0.6s that genuine solves on faint frames can need.
+  # so each solve is only given until the next frame is due: a newer frame
+  # beats finishing an old one, which after a slew was likely exposed while
+  # still moving. This is the minimum it's given regardless, kept above the
+  # ~0.3-0.6s that genuine solves on faint frames can need.
   supersede_after_ms: 500
 
 cedar_detect:
