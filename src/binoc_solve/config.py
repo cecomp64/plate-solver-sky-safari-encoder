@@ -76,11 +76,13 @@ class SolverConfig:
     sigma: float
     solve_timeout_ms: int
     match_max_error: float
+    supersede_after_ms: int
 
 
 @dataclass(frozen=True)
 class CedarDetectConfig:
     address: str
+    binning: int
 
 
 @dataclass(frozen=True)

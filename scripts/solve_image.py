@@ -32,7 +32,9 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
     config = Config.load(args.config)
-    detect = DetectClient(config.cedar_detect.address, config.solver.sigma)
+    detect = DetectClient(
+        config.cedar_detect.address, config.solver.sigma, config.cedar_detect.binning
+    )
     solver = Solver(config.solver)
 
     with Image.open(args.image) as img:

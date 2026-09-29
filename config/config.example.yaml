@@ -153,7 +153,7 @@ solver:
   database_path: null
   fov_estimate_deg: 53.5
   sigma: 8.0
-  solve_timeout_ms: 3000
+  solve_timeout_ms: 1000
   # How far a detected star pattern may differ from the catalog's and
   # still match. cedar-solve's default (0.002) is too tight for the stock
   # lens: its distortion pushes patterns spanning the wide field outside
@@ -161,9 +161,24 @@ solver:
   # happen to sit near the center (in practice: near zenith). 0.005
   # recovered those frames with no false solves on random star fields.
   match_max_error: 0.005
+  # Frames are captured continuously in the background (frame_grabber.py),
+  # so a newer frame can arrive while a solve is still running. Such a
+  # solve is abandoned for the newer frame once it has run this long:
+  # smeared mid-slew frames stop wasting the whole solve_timeout_ms, so the
+  # first clean frame after the mount stops is solved right away. Kept
+  # above the ~0.3-0.6s that genuine solves on faint frames can need.
+  supersede_after_ms: 500
 
 cedar_detect:
   address: "localhost:50051"
+  # Downscale factor (2, 4 or 8) cedar-detect uses to find star candidates;
+  # centroids are still reported at full resolution. cedar-detect only
+  # accepts compact star images, so at 2 this lens's bright stars - which
+  # spread over ~10px - were rejected as non-stars, leaving the solver to
+  # pattern-match fainter stars and noise. At 4 they're detected and
+  # ranked brightest, as the catalog patterns expect: tonight's failed
+  # zenith frames went from 0 of 41 solved to 35 of 41.
+  binning: 4
 
 encoder:
   # SkySafari connection. Matches the esp32_push_to project's settings so

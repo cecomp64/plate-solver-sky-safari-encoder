@@ -28,3 +28,6 @@ systemd/*.local.service
 
 # OS
 .DS_Store
+
+# Local restore points of config + uncommitted code (see snapshots/*/README)
+snapshots/

@@ -50,8 +50,9 @@ def _build_config(tmp_path) -> Config:
         failed_frames=FailedFramesConfig(
             enabled=False, dir=str(tmp_path / "failed_frames"), min_interval_s=30.0, max_files=50,
         ),
-        solver=SolverConfig(database_path=None, fov_estimate_deg=30.0, sigma=8.0, solve_timeout_ms=1000, match_max_error=0.005),
-        cedar_detect=CedarDetectConfig(address="localhost:50051"),
+        solver=SolverConfig(database_path=None, fov_estimate_deg=30.0, sigma=8.0, solve_timeout_ms=1000, match_max_error=0.005,
+            supersede_after_ms=500),
+        cedar_detect=CedarDetectConfig(address="localhost:50051", binning=4),
         encoder=EncoderConfig(
             bind_host="127.0.0.1", bind_port=0, az_resolution=36000, alt_resolution=36000,
             flip_azimuth=False, flip_altitude=False,

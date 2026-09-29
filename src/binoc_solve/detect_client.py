@@ -30,7 +30,7 @@ class DetectionResult:
 
 
 class DetectClient:
-    def __init__(self, address: str, sigma: float) -> None:
+    def __init__(self, address: str, sigma: float, binning: int) -> None:
         # cedar-solve's `tetra3` package vendors the generated gRPC stubs
         # (tetra3/cedar_detect_pb2*.py) alongside the Tetra3 solver itself -
         # see SETUP.md. Imported here (not at module level) so this module,
@@ -49,6 +49,7 @@ class DetectClient:
         self._cedar_detect_pb2 = cedar_detect_pb2
         self._cedar_detect_pb2_grpc = cedar_detect_pb2_grpc
         self._sigma = sigma
+        self._binning = binning
         self._channel = grpc.insecure_channel(address)
         self._stub = cedar_detect_pb2_grpc.CedarDetectStub(self._channel)
 
@@ -89,6 +90,7 @@ class DetectClient:
                 ),
                 sigma=self._sigma,
                 use_binned_for_star_candidates=True,
+                binning=self._binning,
             )
             result = self._stub.ExtractCentroids(request)
         finally:

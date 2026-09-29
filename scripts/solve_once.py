@@ -27,7 +27,9 @@ def main() -> int:
 
     config = Config.load(args.config)
     camera = Camera(config.camera)
-    detect = DetectClient(config.cedar_detect.address, config.solver.sigma)
+    detect = DetectClient(
+        config.cedar_detect.address, config.solver.sigma, config.cedar_detect.binning
+    )
     solver = Solver(config.solver)
 
     try:
